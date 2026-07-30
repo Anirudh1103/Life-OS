@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import { userService } from '@/services/user.service';
 import { UserRecord } from '@/types/firestore';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -28,6 +29,7 @@ function AdminUsersPage() {
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const { sendPasswordReset } = useAuth();
   const { toast } = useToast();
 
   const form = useForm<CreateUserForm>({
@@ -94,6 +96,18 @@ function AdminUsersPage() {
     [fetchUsers, toast],
   );
 
+  const onResetPassword = useCallback(
+    async (user: UserRecord) => {
+      try {
+        await sendPasswordReset(user.email);
+        toast({ title: 'Reset link sent', description: `Password reset email sent to ${user.email}.`, variant: 'success' });
+      } catch {
+        toast({ title: 'Reset failed', description: 'Unable to send password reset email.', variant: 'danger' });
+      }
+    },
+    [sendPasswordReset, toast],
+  );
+
   const rows = useMemo(
     () =>
       users.map((item) => ({
@@ -107,13 +121,16 @@ function AdminUsersPage() {
             <Button size="xs" variant="secondary" onClick={() => onToggleActive(item, !item.isActive)}>
               {item.isActive ? 'Disable' : 'Enable'}
             </Button>
+            <Button size="xs" variant="secondary" onClick={() => onResetPassword(item)}>
+              Reset PW
+            </Button>
             <Button size="xs" variant="danger" onClick={() => onDelete(item)}>
               Delete
             </Button>
           </div>,
         ],
       })),
-    [users, onDelete, onToggleActive],
+    [users, onDelete, onToggleActive, onResetPassword],
   );
 
   return (

@@ -1,6 +1,17 @@
-import { type ElementType, useMemo } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LogOut, Settings2, ShieldAlert, Sparkles, User } from 'lucide-react';
+import { type ElementType } from 'react';
+import { NavLink, Outlet } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  Calendar,
+  Activity,
+  Users,
+  Target,
+  Heart,
+  BookOpen,
+  Trophy,
+  Settings,
+  LogOut
+} from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from '@/components/ui/Button';
@@ -8,24 +19,45 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Toggle } from '@/components/ui/Toggle';
 
 const navItems = [
-  { label: 'Dashboard', path: '/dashboard', icon: Sparkles },
-  { label: 'Profile', path: '/profile', icon: User },
-  { label: 'Settings', path: '/settings', icon: Settings2 },
+  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+  { label: 'Planner', path: '/planner', icon: Calendar },
+  { label: 'Fitness', path: '/fitness', icon: Activity, disabled: true },
+  { label: 'Together', path: '/together', icon: Users, disabled: true },
+  { label: 'Goals', path: '/goals', icon: Target, disabled: true },
+  { label: 'Health', path: '/health', icon: Heart, disabled: true },
+  { label: 'Journal', path: '/journal', icon: BookOpen, disabled: true },
+  { label: 'Rewards', path: '/rewards', icon: Trophy, disabled: true },
+  { label: 'Settings', path: '/settings', icon: Settings },
 ];
 
-const adminItems = [
-  { label: 'Admin', path: '/admin', icon: ShieldAlert },
-  { label: 'Users', path: '/admin/users', icon: User },
-  { label: 'Exercises', path: '/admin/exercises', icon: Sparkles },
-];
+function NavItem({
+  label,
+  path,
+  icon: Icon,
+  disabled
+}: {
+  label: string;
+  path: string;
+  icon: ElementType;
+  disabled?: boolean;
+}) {
+  if (disabled) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-slate-400 cursor-not-allowed opacity-60">
+        <Icon className="h-4 w-4" />
+        <span>{label}</span>
+      </div>
+    );
+  }
 
-function NavItem({ label, path, icon: Icon }: { label: string; path: string; icon: ElementType }) {
   return (
     <NavLink
       to={path}
       className={({ isActive }) =>
-        `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${
-          isActive ? 'bg-slate-100 text-slate-950 shadow-soft dark:bg-slate-800 dark:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800'
+        `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+          isActive
+            ? 'bg-indigo-600 text-white shadow-soft dark:bg-indigo-600 dark:text-white'
+            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white'
         }`
       }
     >
@@ -36,82 +68,121 @@ function NavItem({ label, path, icon: Icon }: { label: string; path: string; ico
 }
 
 function AppShell() {
-  const location = useLocation();
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
-  const pageTitle = useMemo(() => {
-    if (location.pathname.startsWith('/admin')) {
-      return 'Admin Console';
-    }
-    if (location.pathname.startsWith('/settings')) {
-      return 'Settings';
-    }
-    if (location.pathname.startsWith('/profile')) {
-      return 'Profile';
-    }
-    return 'Dashboard';
-  }, [location.pathname]);
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 transition-theme dark:bg-slate-950 dark:text-slate-100">
-      <div className="container mx-auto flex min-h-screen flex-col gap-6 px-4 py-5 lg:px-8">
-        <header className="flex flex-col gap-4 rounded-[2rem] border border-slate-200 bg-white/80 p-4 shadow-soft backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/70">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Life OS</p>
-              <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">{pageTitle}</h1>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} label="Theme" />
-              <Button variant="secondary" size="sm" icon={LogOut} onClick={signOut}>
-                Logout
+    <div className="flex min-h-screen bg-slate-50 text-slate-900 transition-theme dark:bg-[#090a0f] dark:text-slate-100">
+      {/* Desktop Left Sidebar */}
+      <aside className="hidden w-64 h-screen sticky top-0 border-r border-slate-200 bg-white p-5 dark:border-slate-800/80 dark:bg-[#0b0c11] lg:flex flex-col justify-between z-30">
+        <div className="space-y-6">
+          {/* Logo */}
+          <div className="flex items-center gap-2.5 px-3 py-2">
+            <span className="h-5 w-5 rounded-full bg-indigo-500 flex items-center justify-center text-white text-xs font-extrabold shadow-sm">O</span>
+            <span className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">Life OS</span>
+          </div>
+
+          {/* Navigation Links */}
+          <nav className="space-y-1">
+            {navItems.map((item) => (
+              <NavItem key={item.label} {...item} />
+            ))}
+          </nav>
+        </div>
+
+        {/* Sidebar Footer User Box */}
+        <div className="space-y-4 border-t border-slate-100 pt-4 dark:border-slate-800/60">
+          {user?.role === 'admin' && (
+            <NavLink to="/admin" className="block px-2">
+              <Button size="xs" variant="secondary" className="w-full justify-start text-[11px] font-bold">
+                Admin Panel
               </Button>
+            </NavLink>
+          )}
+          <div className="flex items-center justify-between gap-2 px-2">
+            <div className="flex items-center gap-3">
+              <Avatar name={user?.name ?? 'Anirudh'} src={user?.photoURL} size="sm" />
+              <div>
+                <p className="text-xs font-bold text-slate-900 dark:text-white">{user?.name?.split(' ')[0] ?? 'Anirudh'}</p>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[8px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                    👑 Premium
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} />
+              <button
+                onClick={signOut}
+                className="text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition p-1"
+                title="Logout"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-            <div>
-              <p className="text-slate-500">Signed in as</p>
-              <p className="font-medium text-slate-900 dark:text-white">{user?.name ?? user?.email ?? 'Guest'}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Avatar name={user?.name ?? 'Guest'} src={user?.photoURL} size="sm" />
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs uppercase tracking-[0.18em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">{user?.role ?? 'user'}</span>
-            </div>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-grow flex flex-col min-h-screen">
+        {/* Top Navbar - Mobile Only */}
+        <header className="lg:hidden sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/80 px-6 py-4 backdrop-blur-md dark:border-slate-800/60 dark:bg-[#090a0f]/80">
+          <div className="flex items-center gap-4">
+            <span className="h-5 w-5 rounded-full bg-indigo-500 flex items-center justify-center text-white text-[10px] font-bold">O</span>
+            <span className="text-md font-bold tracking-tight text-slate-900 dark:text-white">Life OS</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Toggle checked={theme === 'dark'} onCheckedChange={toggleTheme} />
+            {user?.role === 'admin' && (
+              <NavLink to="/admin">
+                <Button size="xs" variant="secondary">
+                  Admin
+                </Button>
+              </NavLink>
+            )}
           </div>
         </header>
-        <div className="grid flex-1 gap-6 lg:grid-cols-[260px_1fr]">
-          <aside className="hidden rounded-[2rem] border border-slate-200 bg-white/90 p-5 shadow-soft backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/80 lg:block">
-            <nav className="space-y-2">
-              {navItems.map((item) => (
-                <NavItem key={item.path} {...item} />
-              ))}
-            </nav>
-            {user?.role === 'admin' && (
-              <div className="mt-8 space-y-2">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Admin tools</p>
-                {adminItems.map((item) => (
-                  <NavItem key={item.path} {...item} />
-                ))}
-              </div>
-            )}
-          </aside>
-          <main className="rounded-[2rem] border border-slate-200 bg-white/90 p-5 shadow-soft backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/80">
-            <Outlet />
-          </main>
-        </div>
-        <footer className="rounded-[2rem] border border-slate-200 bg-white/80 p-4 text-center text-sm text-slate-500 shadow-soft backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
-          Built for premium workflows with future-ready structure.
-        </footer>
+
+        {/* Main Content Wrapper */}
+        <main className="flex-grow p-6 lg:p-8">
+          <Outlet />
+        </main>
       </div>
-      <div className="fixed bottom-0 left-0 right-0 z-20 block bg-slate-50/90 p-3 shadow-soft backdrop-blur-xl dark:bg-slate-950/90 lg:hidden">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
-          {navItems.map((item) => (
-            <Link key={item.path} to={item.path} className="flex-1 rounded-3xl bg-slate-100 px-3 py-3 text-center text-xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
-              <item.icon className="mx-auto mb-1 h-4 w-4" />
-              {item.label}
-            </Link>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 block border-t border-slate-200 bg-white/95 p-2 shadow-lg backdrop-blur-md dark:border-slate-800/60 dark:bg-[#0b0c11]/95 lg:hidden">
+        <div className="flex items-center justify-around gap-2">
+          {navItems.slice(0, 4).map((item) => (
+            <NavLink
+              key={item.label}
+              to={item.disabled ? '#' : item.path}
+              className={({ isActive }) =>
+                `flex flex-col items-center gap-1 rounded-xl py-1 text-[10px] font-semibold flex-1 ${
+                  item.disabled
+                    ? 'text-slate-400 cursor-not-allowed opacity-50'
+                    : isActive
+                    ? 'text-indigo-600 dark:text-indigo-400'
+                    : 'text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                }`
+              }
+            >
+              <item.icon className="h-4 w-4" />
+              <span>{item.label}</span>
+            </NavLink>
           ))}
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `flex flex-col items-center gap-1 rounded-xl py-1 text-[10px] font-semibold flex-1 ${
+                isActive ? 'text-indigo-650 dark:text-indigo-400' : 'text-slate-400 hover:text-slate-800 dark:hover:text-white'
+              }`
+            }
+          >
+            <Settings className="h-4 w-4" />
+            <span>Settings</span>
+          </NavLink>
         </div>
       </div>
     </div>

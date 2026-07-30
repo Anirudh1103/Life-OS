@@ -1,7 +1,8 @@
 import { createDocument, getDocument, listCollection, queryCollection, updateDocument } from '@/services/firestore.service';
 import { UserRecord } from '@/types/firestore';
+import { FIRESTORE_COLLECTIONS } from '@/utils/constants';
 
-const collectionName = 'users';
+const collectionName = FIRESTORE_COLLECTIONS.USERS;
 
 const resolveUserDocId = async (identifier: string): Promise<string | null> => {
   const byUid = await queryCollection<UserRecord>(collectionName, [

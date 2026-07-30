@@ -9,6 +9,7 @@ const ForgotPasswordPage = lazy(() => import('@/features/auth/pages/ForgotPasswo
 const DashboardPage = lazy(() => import('@/features/dashboard/pages/DashboardPage'));
 const ProfilePage = lazy(() => import('@/pages/ProfilePage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
+const PlannerPage = lazy(() => import('@/features/planner/pages/PlannerPage'));
 const AdminUsersPage = lazy(() => import('@/features/admin/pages/AdminUsersPage'));
 const AdminExercisesPage = lazy(() => import('@/features/admin/pages/AdminExercisesPage'));
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
@@ -63,6 +64,7 @@ function AppRoutes() {
       />
       <Route element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/planner" element={<PlannerPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

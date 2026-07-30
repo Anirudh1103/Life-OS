@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  deleteDoc,
   getDoc,
   getDocs,
   query,
@@ -35,7 +36,7 @@ export const listCollection = async <T>(path: string, filter?: { field: string; 
 
 export const queryCollection = async <T>(path: string, filters: { field: string; operator: WhereFilterOp; value: unknown }[]) => {
   const collectionRef = collection(firestore, path);
-  const q = query(collectionRef, ...filters.map((item) => where(item.field, item.operator, item.value)), orderBy('createdAt', 'desc'));
+  const q = query(collectionRef, ...filters.map((item) => where(item.field, item.operator, item.value)));
   const snapshot = await getDocs(q);
   return snapshot.docs.map((docSnapshot) => ({ id: docSnapshot.id, ...(docSnapshot.data() as T) }));
 };
@@ -50,3 +51,9 @@ export const updateDocument = async (path: string, data: Partial<DocumentData>) 
   const reference = doc(firestore, path);
   await updateDoc(reference, data);
 };
+
+export const deleteDocument = async (path: string) => {
+  const reference = doc(firestore, path);
+  await deleteDoc(reference);
+};
+

@@ -20,16 +20,16 @@
 
 [data-theme='dark'] {
   color-scheme: dark;
-  --surface: #0f172a;
-  --surface-muted: #111827;
-  --border: #334155;
+  --surface: #090a0f;
+  --surface-muted: #11131c;
+  --border: #1d1e2a;
   --text: #f8fafc;
   --muted: #cbd5e1;
   --primary: #e2e8f0;
   --primary-strong: #f8fafc;
-  --accent: #818cf8;
+  --accent: #6366f1;
   --accent-soft: #1e293b;
-  --shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
 html {
