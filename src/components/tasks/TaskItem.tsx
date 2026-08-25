@@ -95,13 +95,13 @@ export const TaskItem: React.FC<TaskItemProps> = ({
     let colorClass = '';
     switch (task.priority) {
       case 'high': 
-        colorClass = 'text-danger bg-danger/10 border-danger/20'; 
+        colorClass = 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20'; 
         break;
       case 'medium': 
         colorClass = 'text-warning bg-warning/10 border-warning/20'; 
         break;
       case 'low': 
-        colorClass = 'text-accent bg-accent/10 border-accent/20'; 
+        colorClass = 'text-success bg-success/10 border-success/20'; 
         break;
     }
 
@@ -196,19 +196,25 @@ export const TaskItem: React.FC<TaskItemProps> = ({
         </div>
       </div>
 
-      {/* Importance star */}
-      <button
-        onClick={handleToggleImportant}
-        className="mt-1 focus:outline-none"
-      >
-        <Star 
-          className={`h-4.5 w-4.5 transition-colors ${
-            task.is_important 
-              ? 'text-warning fill-warning' 
-              : 'text-text-secondary/30 hover:text-warning'
-          }`} 
-        />
-      </button>
+      {/* Right controls: Assignee & Star */}
+      <div className="flex items-center gap-3 shrink-0 select-none">
+        <div className="h-5.5 w-5.5 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-600 flex items-center justify-center text-white text-[9px] font-black shadow-sm uppercase">
+          {user?.email?.charAt(0) || 'A'}
+        </div>
+
+        <button
+          onClick={handleToggleImportant}
+          className="focus:outline-none"
+        >
+          <Star 
+            className={`h-4.5 w-4.5 transition-colors ${
+              task.is_important 
+                ? 'text-warning fill-warning' 
+                : 'text-text-secondary/30 hover:text-warning'
+            }`} 
+          />
+        </button>
+      </div>
     </div>
   );
 };

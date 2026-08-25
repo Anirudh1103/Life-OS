@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
   LayoutDashboard, 
@@ -19,6 +19,10 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ onPlaceholderClick }) => {
   const { profile } = useAuth();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const currentSpace = searchParams.get('space') || 'personal';
+  
   const mainNavItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard, isPlaceholder: false },
     { name: 'Learning', path: '/learning', icon: BookOpen, isPlaceholder: false },
@@ -91,34 +95,80 @@ export const Sidebar: React.FC<SidebarProps> = ({ onPlaceholderClick }) => {
         </div>
 
         {/* Main Navigation Links */}
-        <nav className="flex-1 space-y-1">
+        <nav className="space-y-1">
           {mainNavItems.map(item => renderLink(item))}
         </nav>
 
-        {/* Separator */}
-        <div className="my-6 border-t border-border/20" />
-
-        {/* Bottom Navigation Links */}
-        <nav className="space-y-1">
-          {bottomNavItems.map(item => renderLink(item))}
-        </nav>
+        {/* Spaces Section */}
+        <div className="mt-6 space-y-2 select-none text-left">
+          <span className="text-[9px] font-extrabold text-text-secondary uppercase tracking-widest px-4 block">Spaces</span>
+          <div className="space-y-0.5 px-2">
+            <NavLink 
+              to="/tasks?space=personal"
+              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all w-full text-left ${
+                location.pathname === '/tasks' && currentSpace === 'personal'
+                  ? 'text-text-primary bg-surface-hover/30 border-l-2 border-accent pl-[12px]'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover/40'
+              }`}
+            >
+              <span className="text-xs">🏠</span>
+              <span>Personal</span>
+            </NavLink>
+            <NavLink 
+              to="/tasks?space=work"
+              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all w-full text-left ${
+                location.pathname === '/tasks' && currentSpace === 'work'
+                  ? 'text-text-primary bg-surface-hover/30 border-l-2 border-accent pl-[12px]'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover/40'
+              }`}
+            >
+              <span className="text-xs">💼</span>
+              <span>Work</span>
+            </NavLink>
+            <button 
+              onClick={() => onPlaceholderClick('New Space')}
+              className="flex items-center gap-3 px-4 py-2 text-[10px] font-bold text-text-secondary/70 hover:text-text-primary w-full text-left transition-colors"
+            >
+              <span>+</span>
+              <span>New Space</span>
+            </button>
+          </div>
+        </div>
 
         {/* Separator */}
         <div className="my-5 border-t border-border/20" />
 
+        {/* Bottom Navigation Links */}
+        <nav className="space-y-1">
+          {bottomNavItems.map(item => renderLink(item))}
+          <button
+            onClick={() => onPlaceholderClick('Help & Support')}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-text-secondary/70 hover:text-text-primary hover:bg-surface-hover/40 w-full text-left transition-colors"
+          >
+            <span className="h-4 w-4 shrink-0 text-text-secondary flex items-center justify-center font-bold text-xs">?</span>
+            <span>Help & Support</span>
+          </button>
+        </nav>
+
+        {/* Separator */}
+        <div className="my-4 border-t border-border/20" />
+
         {/* Profile Footer */}
-        <div className="flex items-center gap-3 px-2 py-1 select-none mt-auto">
-          <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm shadow-sm shrink-0">
-            {profile?.display_name?.charAt(0).toUpperCase() || 'A'}
+        <div className="flex items-center justify-between px-2 py-1 select-none mt-auto">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm shadow-sm shrink-0">
+              {profile?.display_name?.charAt(0).toUpperCase() || 'A'}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-black text-text-primary truncate">
+                {profile?.display_name || 'Anirudh'}
+              </p>
+              <p className="text-[10px] text-text-secondary/70 font-semibold truncate">
+                Premium Plan
+              </p>
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-text-primary truncate">
-              {profile?.display_name || 'Anirudh'}
-            </p>
-            <p className="text-[10px] text-text-secondary/70 font-semibold truncate">
-              Premium Plan
-            </p>
-          </div>
+          <span className="text-text-secondary text-[9px] shrink-0 font-bold ml-1">▼</span>
         </div>
       </aside>
 
