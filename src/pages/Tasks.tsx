@@ -265,7 +265,7 @@ export const Tasks: React.FC = () => {
       </div>
 
       {/* TWO COLUMN WORKSPACE SPLIT LAYOUT */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6.5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* LEFT COLUMN: ACTIVE TASKS LIST & QUICK ADD (takes 2 cols) */}
         <div className="lg:col-span-2 space-y-6">
