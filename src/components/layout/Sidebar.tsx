@@ -163,9 +163,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ onPlaceholderClick }) => {
               <p className="text-xs font-black text-text-primary truncate">
                 {profile?.display_name || 'Anirudh'}
               </p>
-              <p className="text-[10px] text-text-secondary/70 font-semibold truncate">
-                Premium Plan
-              </p>
             </div>
           </div>
           <span className="text-text-secondary text-[9px] shrink-0 font-bold ml-1">▼</span>
