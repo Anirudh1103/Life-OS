@@ -123,11 +123,11 @@ export const TaskItem: React.FC<TaskItemProps> = ({
   return (
     <div
       onClick={onSelect}
-      className={`glass-panel p-4 rounded-2xl flex items-start justify-between gap-4 cursor-pointer select-none transition-all duration-200 ${
+      className={`py-3 px-2 flex items-start justify-between gap-4 cursor-pointer select-none transition-all duration-200 border-b border-border/10 hover:bg-surface/20 ${
         isSelected 
-          ? 'border-accent/40 bg-surface-hover/20 shadow-md ring-1 ring-accent/10' 
-          : 'hover:bg-surface-hover/10 border-border/20'
-      } ${task.is_completed ? 'opacity-60 hover:opacity-85' : ''}`}
+          ? 'bg-surface/20 border-l-2 border-accent pl-3' 
+          : ''
+      } ${task.is_completed ? 'opacity-50' : ''}`}
     >
       {/* Checkbox */}
       <button

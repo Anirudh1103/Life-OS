@@ -15,8 +15,8 @@ export const Tasks: React.FC = () => {
   // Workspace selection from query parameter
   const workspace = (searchParams.get('space') as 'personal' | 'work') || 'personal';
 
-  // Sub-tabs navigation
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'kanban' | 'calendar'>('overview');
+  // Sub-tabs navigation (Tasks, Kanban, Calendar, Analytics)
+  const [activeSubTab, setActiveSubTab] = useState<'tasks' | 'kanban' | 'calendar' | 'analytics'>('tasks');
   
   // Data lists
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -167,26 +167,26 @@ export const Tasks: React.FC = () => {
   const allWorkspaceTags = Array.from(new Set(tasks.flatMap(t => t.tags || [])));
 
   return (
-    <div className="space-y-6 pb-16 animate-fade-in text-left select-none max-w-6xl mx-auto">
+    <div className="space-y-6 pb-16 animate-fade-in text-left select-none max-w-2xl mx-auto">
       
       {/* 1. HEADER ROW */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/10 pb-4">
         <div>
-          <h1 className="text-lg font-bold tracking-tight text-text-primary uppercase tracking-wider">
-            {workspace === 'work' ? '💼 Work Space' : '🏠 Personal Space'}
+          <h1 className="text-base font-bold tracking-tight text-text-primary uppercase tracking-wider">
+            {workspace === 'work' ? '💼 Work' : '🏠 Personal'}
           </h1>
-          <p className="text-[10px] text-text-secondary/70 font-medium">
-            Manage your daily tasks and project milestones
+          <p className="text-[10px] text-text-secondary/70 font-semibold mt-0.5">
+            {totalCount} tasks &middot; {pendingCount} pending &middot; {completedCount} completed &middot; <span className={overdueCount > 0 ? 'text-danger font-bold' : ''}>{overdueCount} overdue</span>
           </p>
         </div>
 
         {/* capsule active sub-tab view switcher */}
         <div className="bg-surface/20 border border-border/10 rounded-xl p-1 flex gap-1 self-start sm:self-auto">
-          {(['overview', 'kanban', 'calendar'] as const).map(tab => (
+          {(['tasks', 'kanban', 'calendar', 'analytics'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveSubTab(tab)}
-              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all outline-none ${
+              className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all outline-none ${
                 activeSubTab === tab 
                   ? 'bg-accent/15 border border-accent/20 text-accent font-extrabold shadow-sm' 
                   : 'text-text-secondary hover:text-text-primary'
@@ -198,37 +198,14 @@ export const Tasks: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. MINIMAL STATUS CAPSULE DOCK */}
-      <div className="flex items-center gap-6 px-5 py-3 bg-surface/10 border border-border/15 rounded-2xl text-[9px] font-bold text-text-secondary/80 overflow-x-auto scrollbar-none shadow-sm">
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
-          <span>{totalCount} Total</span>
-        </div>
-        <div className="h-3.5 w-px bg-border/20" />
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span className="h-1.5 w-1.5 rounded-full bg-success" />
-          <span>{completedCount} Completed</span>
-        </div>
-        <div className="h-3.5 w-px bg-border/20" />
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-          <span>{pendingCount} Pending</span>
-        </div>
-        <div className="h-3.5 w-px bg-border/20" />
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span className="h-1.5 w-1.5 rounded-full bg-danger" />
-          <span className="text-danger/80">{overdueCount} Overdue</span>
-        </div>
-      </div>
-
-      {/* 3. SUB-VIEW SWITCHER CONTENT */}
-      {activeSubTab === 'overview' && (
+      {/* 2. SUB-VIEW SWITCHER CONTENT */}
+      {activeSubTab === 'tasks' && (
         <div className="space-y-6">
           
           {/* SEARCH & FILTERS DOCK */}
           <div className="flex flex-col md:flex-row gap-3 items-center justify-between bg-surface/5 p-2 rounded-xl border border-border/10">
             {/* Search Box */}
-            <div className="relative w-full md:w-60">
+            <div className="relative w-full md:w-56">
               <Search className="absolute left-2.5 top-2.5 h-3 w-3 text-text-secondary/40" />
               <input
                 type="text"
@@ -265,7 +242,7 @@ export const Tasks: React.FC = () => {
                 onClick={() => setShowQuickAdd(!showQuickAdd)} 
                 className="px-2.5 py-1 bg-accent/10 hover:bg-accent/20 border border-accent/25 rounded-lg text-accent font-black transition-colors"
               >
-                + New Task
+                + New
               </button>
             </div>
           </div>
@@ -276,7 +253,7 @@ export const Tasks: React.FC = () => {
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Create task (e.g. Design assets)..."
+                  placeholder="Task title (e.g. Design assets)..."
                   value={quickTitle}
                   onChange={(e) => setQuickTitle(e.target.value)}
                   required
@@ -293,155 +270,89 @@ export const Tasks: React.FC = () => {
             </form>
           )}
 
-          {/* TWO COLUMN ASYMMETRIC GRID WORKSPACE */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          {/* TIMELINE TASKS LIST */}
+          <div className="space-y-6">
             
-            {/* LEFT COLUMN: MINIMAL TIMELINE TASKS LIST (2/3 width) */}
-            <div className="lg:col-span-2 space-y-6">
-              
-              {/* Today */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center px-1">
-                  <h3 className="text-[10px] font-extrabold text-text-secondary/70 uppercase tracking-widest">Today</h3>
-                  <span className="text-[9px] font-bold text-text-secondary/50">{grouped.todayList.length}</span>
-                </div>
-                <div className="space-y-1.5">
-                  {grouped.todayList.length === 0 ? (
-                    <p className="text-[9px] text-text-secondary/30 font-medium py-3 text-center">Clear</p>
-                  ) : (
-                    grouped.todayList.map(t => (
-                      <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
-                    ))
-                  )}
-                </div>
+            {/* Today */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center px-1">
+                <h3 className="text-[10px] font-black text-text-secondary/70 uppercase tracking-wider">Today</h3>
+                <span className="text-[9px] font-bold text-text-secondary/40">{grouped.todayList.length}</span>
               </div>
-
-              {/* This Week */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center px-1">
-                  <h3 className="text-[10px] font-extrabold text-text-secondary/70 uppercase tracking-widest">This Week</h3>
-                  <span className="text-[9px] font-bold text-text-secondary/50">{grouped.weekList.length}</span>
-                </div>
-                <div className="space-y-1.5">
-                  {grouped.weekList.length === 0 ? (
-                    <p className="text-[9px] text-text-secondary/30 font-medium py-3 text-center">Clear</p>
-                  ) : (
-                    grouped.weekList.map(t => (
-                      <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
-                    ))
-                  )}
-                </div>
+              <div className="divide-y divide-border/10">
+                {grouped.todayList.length === 0 ? (
+                  <p className="text-[9px] text-text-secondary/35 font-medium py-3 px-2">No tasks due today</p>
+                ) : (
+                  grouped.todayList.map(t => (
+                    <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
+                  ))
+                )}
               </div>
-
-              {/* Later */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center px-1">
-                  <h3 className="text-[10px] font-extrabold text-text-secondary/70 uppercase tracking-widest">Later</h3>
-                  <span className="text-[9px] font-bold text-text-secondary/50">{grouped.laterList.length}</span>
-                </div>
-                <div className="space-y-1.5">
-                  {grouped.laterList.length === 0 ? (
-                    <p className="text-[9px] text-text-secondary/30 font-medium py-3 text-center">Clear</p>
-                  ) : (
-                    grouped.laterList.map(t => (
-                      <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Collapsed completed list view */}
-              {completedCount > 0 && (
-                <div className="space-y-2 pt-4 border-t border-border/10">
-                  <button 
-                    onClick={() => setShowCompleted(!showCompleted)}
-                    className="text-[9px] font-black uppercase tracking-widest text-text-secondary hover:text-text-primary flex items-center gap-1.5 outline-none"
-                  >
-                    <span>{showCompleted ? '▼' : '▶'} Completed ({completedCount})</span>
-                  </button>
-                  {showCompleted && (
-                    <div className="space-y-1.5">
-                      {filteredTasks.filter(t => t.is_completed).map(t => (
-                        <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
             </div>
 
-            {/* RIGHT COLUMN: ANALYTICS & CALENDAR SIDEBAR (1/3 width) */}
-            <div className="space-y-6">
-              
-              {/* Sleek unified Analytics panel card */}
-              <div className="glass-panel p-5 rounded-2xl border border-border/10 bg-surface/5 space-y-4">
-                <div className="flex items-center justify-between select-none">
-                  <h4 className="text-[10px] font-black uppercase text-text-secondary tracking-widest">Analytics</h4>
-                  <span className="text-[10px] font-black text-accent">{completionPercentage}%</span>
-                </div>
-
-                {/* Progress bar metrics */}
-                <div className="space-y-3.5 text-[9px] font-bold">
-                  {/* High priority */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-text-primary">High Priority</span>
-                      <span className="text-text-secondary font-mono">{priorityStats.high}</span>
-                    </div>
-                    <div className="h-1 w-full bg-surface-hover rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-indigo-500 rounded-full"
-                        style={{ width: `${totalCount > 0 ? (priorityStats.high / totalCount) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Medium priority */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-text-primary">Medium Priority</span>
-                      <span className="text-text-secondary font-mono">{priorityStats.medium}</span>
-                    </div>
-                    <div className="h-1 w-full bg-surface-hover rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-warning rounded-full"
-                        style={{ width: `${totalCount > 0 ? (priorityStats.medium / totalCount) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Low priority */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-text-primary">Low Priority</span>
-                      <span className="text-text-secondary font-mono">{priorityStats.low}</span>
-                    </div>
-                    <div className="h-1 w-full bg-surface-hover rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-success rounded-full"
-                        style={{ width: `${totalCount > 0 ? (priorityStats.low / totalCount) * 100 : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
+            {/* This Week */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center px-1">
+                <h3 className="text-[10px] font-black text-text-secondary/70 uppercase tracking-wider">This Week</h3>
+                <span className="text-[9px] font-bold text-text-secondary/40">{grouped.weekList.length}</span>
               </div>
-
-              {/* Calendar card */}
-              <Calendar />
-
+              <div className="divide-y divide-border/10">
+                {grouped.weekList.length === 0 ? (
+                  <p className="text-[9px] text-text-secondary/35 font-medium py-3 px-2">No tasks due this week</p>
+                ) : (
+                  grouped.weekList.map(t => (
+                    <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
+                  ))
+                )}
+              </div>
             </div>
+
+            {/* Later */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center px-1">
+                <h3 className="text-[10px] font-black text-text-secondary/70 uppercase tracking-wider">Later</h3>
+                <span className="text-[9px] font-bold text-text-secondary/40">{grouped.laterList.length}</span>
+              </div>
+              <div className="divide-y divide-border/10">
+                {grouped.laterList.length === 0 ? (
+                  <p className="text-[9px] text-text-secondary/35 font-medium py-3 px-2">No tasks scheduled for later</p>
+                ) : (
+                  grouped.laterList.map(t => (
+                    <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Completed collapsible view */}
+            {completedCount > 0 && (
+              <div className="space-y-2 pt-4 border-t border-border/10">
+                <button 
+                  onClick={() => setShowCompleted(!showCompleted)}
+                  className="text-[9px] font-black uppercase tracking-widest text-text-secondary hover:text-text-primary flex items-center gap-1.5 outline-none"
+                >
+                  <span>{showCompleted ? '▼' : '▶'} Completed ({completedCount})</span>
+                </button>
+                {showCompleted && (
+                  <div className="divide-y divide-border/10">
+                    {filteredTasks.filter(t => t.is_completed).map(t => (
+                      <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
 
         </div>
       )}
 
-      {/* 4. KANBAN COLUMN LAYOUT */}
+      {/* 3. KANBAN COLUMN LAYOUT */}
       {activeSubTab === 'kanban' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-start mt-4 select-none">
           {/* TO DO */}
-          <div className="glass-panel p-4.5 rounded-2xl border border-border/10 bg-surface/5 space-y-3">
+          <div className="glass-panel p-4 rounded-xl border border-border/10 bg-surface/5 space-y-3">
             <h4 className="text-[10px] font-black uppercase text-text-secondary tracking-widest px-1">To Do</h4>
             <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
               {filteredTasks.filter(t => !t.is_completed && (t.priority === 'low' || t.priority === 'none')).length === 0 ? (
@@ -450,7 +361,7 @@ export const Tasks: React.FC = () => {
                 filteredTasks.filter(t => !t.is_completed && (t.priority === 'low' || t.priority === 'none')).map(t => (
                   <div 
                     key={t.id} 
-                    className="p-3 bg-surface/30 border border-border/5 rounded-xl flex justify-between items-center hover:bg-surface-hover/20 cursor-pointer"
+                    className="p-3 bg-surface/30 border border-border/5 rounded-xl flex justify-between items-center hover:bg-surface-hover/20 cursor-pointer text-left"
                     onClick={() => setSelectedTask(t)}
                   >
                     <div>
@@ -470,7 +381,7 @@ export const Tasks: React.FC = () => {
           </div>
 
           {/* IN PROGRESS */}
-          <div className="glass-panel p-4.5 rounded-2xl border border-border/10 bg-surface/5 space-y-3">
+          <div className="glass-panel p-4 rounded-xl border border-border/10 bg-surface/5 space-y-3">
             <h4 className="text-[10px] font-black uppercase text-text-secondary tracking-widest px-1">In Progress</h4>
             <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
               {filteredTasks.filter(t => !t.is_completed && (t.priority === 'medium' || t.priority === 'high')).length === 0 ? (
@@ -479,7 +390,7 @@ export const Tasks: React.FC = () => {
                 filteredTasks.filter(t => !t.is_completed && (t.priority === 'medium' || t.priority === 'high')).map(t => (
                   <div 
                     key={t.id} 
-                    className="p-3 bg-surface/30 border border-border/5 rounded-xl flex justify-between items-center hover:bg-surface-hover/20 cursor-pointer"
+                    className="p-3 bg-surface/30 border border-border/5 rounded-xl flex justify-between items-center hover:bg-surface-hover/20 cursor-pointer text-left"
                     onClick={() => setSelectedTask(t)}
                   >
                     <div>
@@ -507,7 +418,7 @@ export const Tasks: React.FC = () => {
           </div>
 
           {/* COMPLETED */}
-          <div className="glass-panel p-4.5 rounded-2xl border border-border/10 bg-surface/5 space-y-3">
+          <div className="glass-panel p-4 rounded-xl border border-border/10 bg-surface/5 space-y-3">
             <h4 className="text-[10px] font-black uppercase text-text-secondary tracking-widest px-1">Completed</h4>
             <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
               {filteredTasks.filter(t => t.is_completed).length === 0 ? (
@@ -516,7 +427,7 @@ export const Tasks: React.FC = () => {
                 filteredTasks.filter(t => t.is_completed).map(t => (
                   <div 
                     key={t.id} 
-                    className="p-3 bg-surface/30 border border-border/5 rounded-xl flex justify-between items-center hover:bg-surface-hover/20 cursor-pointer opacity-75"
+                    className="p-3 bg-surface/30 border border-border/5 rounded-xl flex justify-between items-center hover:bg-surface-hover/20 cursor-pointer opacity-75 text-left"
                     onClick={() => setSelectedTask(t)}
                   >
                     <div>
@@ -537,10 +448,75 @@ export const Tasks: React.FC = () => {
         </div>
       )}
 
-      {/* 5. CALENDAR VIEW */}
+      {/* 4. CALENDAR VIEW */}
       {activeSubTab === 'calendar' && (
-        <div className="glass-panel p-6 rounded-2xl border border-border/10 bg-surface/10 max-w-2xl mx-auto">
+        <div className="glass-panel p-6 rounded-xl border border-border/10 bg-surface/10 max-w-md mx-auto">
           <Calendar />
+        </div>
+      )}
+
+      {/* 5. ANALYTICS VIEW */}
+      {activeSubTab === 'analytics' && (
+        <div className="glass-panel p-6 rounded-xl border border-border/10 bg-surface/5 space-y-5 max-w-md mx-auto">
+          <div className="flex items-center justify-between">
+            <h4 className="text-[10px] font-black uppercase text-text-secondary tracking-widest">Workspace Completion</h4>
+            <span className="text-xs font-black text-accent">{completionPercentage}%</span>
+          </div>
+
+          <div className="relative h-4 w-full bg-surface-hover rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-accent to-success rounded-full transition-all duration-500"
+              style={{ width: `${completionPercentage}%` }}
+            />
+          </div>
+
+          <div className="h-px bg-border/10 my-4" />
+
+          <h4 className="text-[10px] font-black uppercase text-text-secondary tracking-widest">Priority breakdown</h4>
+          
+          <div className="space-y-4 text-[9px] font-bold">
+            {/* High */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-text-primary">High Priority</span>
+                <span className="text-text-secondary font-mono">{priorityStats.high}</span>
+              </div>
+              <div className="h-1.5 w-full bg-surface-hover rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-indigo-500 rounded-full"
+                  style={{ width: `${totalCount > 0 ? (priorityStats.high / totalCount) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Medium */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-text-primary">Medium Priority</span>
+                <span className="text-text-secondary font-mono">{priorityStats.medium}</span>
+              </div>
+              <div className="h-1.5 w-full bg-surface-hover rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-warning rounded-full"
+                  style={{ width: `${totalCount > 0 ? (priorityStats.medium / totalCount) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Low */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-text-primary">Low Priority</span>
+                <span className="text-text-secondary font-mono">{priorityStats.low}</span>
+              </div>
+              <div className="h-1.5 w-full bg-surface-hover rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-success rounded-full"
+                  style={{ width: `${totalCount > 0 ? (priorityStats.low / totalCount) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
