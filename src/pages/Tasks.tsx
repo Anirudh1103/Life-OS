@@ -54,8 +54,8 @@ export const Tasks: React.FC = () => {
       } catch (e) {}
 
       if (hour >= 5 && hour < 12) setGreeting('Good morning');
-      else if (hour >= 12 && hour < 17) setGreeting('Good afternoon');
-      else if (hour >= 17 && hour < 22) setGreeting('Good evening');
+      else if (hour >= 12 && hour < 16) setGreeting('Good afternoon');
+      else if (hour >= 16 && hour < 22) setGreeting('Good evening');
       else setGreeting('Good night');
 
       const options: Intl.DateTimeFormatOptions = { 
