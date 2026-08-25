@@ -10,6 +10,8 @@ import { CategoryDetail } from './pages/CategoryDetail';
 import { Tasks } from './pages/Tasks';
 import { Fitness } from './pages/Fitness';
 import { Finance } from './pages/Finance';
+import { Settings } from './pages/Settings';
+import { Profile } from './pages/Profile';
 import { BookOpen } from 'lucide-react';
 
 // Protected Route Wrapper
@@ -59,6 +61,8 @@ function App() {
               <Route path="tasks" element={<Tasks />} />
               <Route path="fitness" element={<Fitness />} />
               <Route path="finance" element={<Finance />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="profile" element={<Profile />} />
               
               {/* Fallback to index for other paths */}
               <Route path="*" element={<Navigate to="/" replace />} />

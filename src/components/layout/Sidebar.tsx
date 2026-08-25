@@ -33,8 +33,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onPlaceholderClick }) => {
   ];
 
   const bottomNavItems = [
-    { name: 'Settings', path: '/settings', icon: Settings, isPlaceholder: true },
-    { name: 'Profile', path: '/profile', icon: User, isPlaceholder: true },
+    { name: 'Settings', path: '/settings', icon: Settings, isPlaceholder: false },
+    { name: 'Profile', path: '/profile', icon: User, isPlaceholder: false },
   ];
 
   const renderLink = (item: typeof mainNavItems[0]) => {
@@ -206,14 +206,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ onPlaceholderClick }) => {
             </NavLink>
           );
         })}
-        {/* Menu button for settings/profile placeholder on mobile */}
-        <button
-          onClick={() => onPlaceholderClick('Profile & Settings')}
-          className="flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-medium text-text-secondary"
+        {/* Profile menu button on mobile */}
+        <NavLink
+          to="/profile"
+          className={({ isActive }) => 
+            `flex flex-col items-center justify-center flex-1 py-1 text-[10px] font-medium transition-colors ${
+              isActive ? 'text-accent font-semibold' : 'text-text-secondary'
+            }`
+          }
         >
           <User className="h-5 w-5 mb-0.5" />
           <span>Profile</span>
-        </button>
+        </NavLink>
       </nav>
     </>
   );
