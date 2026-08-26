@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { dbService } from '../services/supabase';
-import { Check, AlertCircle, Sparkles } from 'lucide-react';
+import { Check, AlertCircle, Sparkles, User, Mail, Shield, LogOut, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export const Profile: React.FC = () => {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, signOut } = useAuth();
   
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -29,8 +29,7 @@ export const Profile: React.FC = () => {
     if (profile) {
       setDisplayName(profile.display_name || '');
       setAvatarUrl(profile.avatar_url || avatarGradients[0]);
-      // Load custom bio from metadata if stored, or fallback
-      const cachedBio = localStorage.getItem(`life_os_bio_${profile.id}`) || 'Life-OS Premium Subscriber';
+      const cachedBio = localStorage.getItem(`life_os_bio_${profile.id}`) || 'Life-OS Power User';
       setBio(cachedBio);
     }
   }, [profile]);
@@ -44,142 +43,185 @@ export const Profile: React.FC = () => {
       setSuccessMsg('');
       setErrorMsg('');
 
-      // Save profile updates to database
       await dbService.updateProfile(user.id, {
         display_name: displayName.trim(),
         avatar_url: avatarUrl
       });
 
-      // Save custom bio locally
       localStorage.setItem(`life_os_bio_${user.id}`, bio.trim());
-
-      // Refresh global authentication profile state
       await refreshProfile();
 
-      setSuccessMsg('Profile updated successfully!');
-      confetti({ particleCount: 35, spread: 35, colors: ['#6366F1', '#10B981'] });
+      setSuccessMsg('Profile changes saved successfully!');
+      confetti({ particleCount: 40, spread: 45, origin: { y: 0.8 } });
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg('Failed to update profile. Please try again.');
+      setErrorMsg('System Error: Failed to update profile nodes.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="space-y-6 pb-16 animate-fade-in text-left select-none max-w-xl mx-auto">
+    <div className="max-w-4xl mx-auto animate-fade-in px-4 pb-20 pt-8">
       
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold tracking-tight text-text-primary uppercase tracking-wider">
-          Profile Settings
-        </h1>
-        <p className="text-[10px] text-text-secondary/70 font-semibold mt-0.5">
-          Customize your public presence and account settings
-        </p>
+      {/* Page Header */}
+      <div className="flex items-center justify-between mb-10">
+        <div className="space-y-1 text-left">
+          <h1 className="text-3xl font-black text-text-primary tracking-tight">Identity & Account</h1>
+          <p className="text-xs font-bold text-text-secondary/50 uppercase tracking-widest">Manage your neural link profile and settings</p>
+        </div>
+        <button
+          onClick={signOut}
+          className="flex items-center gap-2 px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          Terminate Session
+        </button>
       </div>
 
-      {/* Main Form */}
-      <form onSubmit={handleSave} className="glass-panel p-6 rounded-2xl border border-border/10 bg-surface/5 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Avatar Section */}
-        <div className="flex flex-col sm:flex-row items-center gap-5">
-          {/* Active Preview */}
-          <div className={`h-16 w-16 rounded-full bg-gradient-to-tr ${avatarUrl} flex items-center justify-center text-white text-xl font-black shadow-lg shadow-indigo-500/10 shrink-0`}>
-            {displayName.charAt(0).toUpperCase() || 'A'}
+        {/* Left Column: Avatar & Quick Info */}
+        <div className="lg:col-span-1 space-y-6">
+          <div className="glass-panel p-8 rounded-[2.5rem] bg-surface/10 border border-white/5 text-center space-y-6">
+            <div className="relative inline-block mx-auto group">
+              <div className={`h-32 w-32 rounded-[2.5rem] bg-gradient-to-tr ${avatarUrl} flex items-center justify-center text-white text-4xl font-black shadow-2xl transition-all group-hover:scale-105 duration-500`}>
+                {displayName.charAt(0).toUpperCase() || 'A'}
+              </div>
+              <div className="absolute -bottom-2 -right-2 h-10 w-10 rounded-2xl bg-[#0B0F19] border border-white/10 flex items-center justify-center text-text-secondary shadow-lg">
+                <Camera className="h-5 w-5" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <h2 className="text-xl font-black text-white">{displayName || 'Anonymous User'}</h2>
+              <p className="text-[10px] font-bold text-accent uppercase tracking-[0.2em]">Premium Status Active</p>
+            </div>
+
+            <div className="pt-4 border-t border-white/5">
+              <p className="text-[11px] text-text-secondary/70 leading-relaxed italic">
+                "{bio || 'No bio set.'}"
+              </p>
+            </div>
           </div>
 
-          <div className="space-y-2 w-full">
-            <label className="text-[9px] font-extrabold text-text-secondary uppercase tracking-widest block">Choose Avatar Style</label>
-            <div className="flex flex-wrap gap-2.5">
-              {avatarGradients.map(grad => (
-                <button
-                  key={grad}
-                  type="button"
-                  onClick={() => setAvatarUrl(grad)}
-                  className={`h-7 w-7 rounded-full bg-gradient-to-tr ${grad} border-2 transition-all flex items-center justify-center ${
-                    avatarUrl === grad ? 'border-text-primary scale-110 shadow' : 'border-transparent hover:scale-105'
-                  }`}
-                >
-                  {avatarUrl === grad && <Check className="h-3 w-3 text-white" />}
-                </button>
-              ))}
+          <div className="glass-panel p-6 rounded-3xl bg-surface/10 border border-white/5 space-y-4">
+            <h3 className="text-[10px] font-black text-text-secondary/40 uppercase tracking-widest flex items-center gap-2">
+              <Shield className="h-3.5 w-3.5" />
+              Security Overview
+            </h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="font-bold text-text-secondary/60">Authentication</span>
+                <span className="text-emerald-400 font-black">SECURE</span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="font-bold text-text-secondary/60">Encryption</span>
+                <span className="text-accent font-black">AES-256</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Form fields */}
-        <div className="space-y-4">
-          {/* Display name */}
-          <div className="space-y-1.5">
-            <label className="text-[9px] font-extrabold text-text-secondary uppercase tracking-widest block">Display Name</label>
-            <input
-              type="text"
-              required
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your name"
-              className="w-full bg-surface/20 border border-border/20 rounded-xl px-4 py-2.5 text-xs font-semibold text-text-primary focus:outline-none focus:border-accent/40"
-            />
-          </div>
+        {/* Right Column: Edit Form */}
+        <div className="lg:col-span-2">
+          <form onSubmit={handleSave} className="glass-panel p-8 rounded-[2.5rem] bg-surface/10 border border-white/5 space-y-8">
 
-          {/* Email (Readonly) */}
-          <div className="space-y-1.5">
-            <label className="text-[9px] font-extrabold text-text-secondary/50 uppercase tracking-widest block">Email Address (Readonly)</label>
-            <input
-              type="email"
-              disabled
-              value={user?.email || ''}
-              className="w-full bg-surface/10 border border-border/10 rounded-xl px-4 py-2.5 text-xs font-semibold text-text-secondary/50 cursor-not-allowed select-none"
-            />
-          </div>
+            <section className="space-y-6 text-left">
+              <h3 className="text-sm font-black text-text-primary uppercase tracking-widest flex items-center gap-2">
+                <User className="h-4 w-4 text-accent" />
+                Personal Details
+              </h3>
 
-          {/* Bio / Status */}
-          <div className="space-y-1.5">
-            <label className="text-[9px] font-extrabold text-text-secondary uppercase tracking-widest block">Bio &amp; Status</label>
-            <textarea
-              rows={3}
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              placeholder="Tell us about yourself..."
-              className="w-full bg-surface/20 border border-border/20 rounded-xl px-4 py-2.5 text-xs font-semibold text-text-primary focus:outline-none focus:border-accent/40 resize-none"
-            />
-          </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-text-secondary/50 uppercase tracking-[0.15em]">Display Name</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder="Anirudh"
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-3.5 px-5 text-sm font-bold text-white focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-text-secondary/50 uppercase tracking-[0.15em]">Email Address</label>
+                  <div className="relative">
+                    <Mail className="absolute left-5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-secondary/30" />
+                    <input
+                      type="email"
+                      disabled
+                      value={user?.email || ''}
+                      className="w-full bg-white/[0.01] border border-white/5 rounded-2xl py-3.5 pl-12 pr-5 text-sm font-bold text-text-secondary/40 cursor-not-allowed"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-text-secondary/50 uppercase tracking-[0.15em]">Bio & Identity</label>
+                <textarea
+                  rows={4}
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Tell Jarvis about yourself..."
+                  className="w-full bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-5 text-sm font-bold text-white focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/50 transition-all resize-none"
+                />
+              </div>
+            </section>
+
+            <section className="space-y-4 pt-4 border-t border-white/5 text-left">
+              <h3 className="text-[10px] font-black text-text-secondary/40 uppercase tracking-widest">Interface Theme Nodes</h3>
+              <div className="flex flex-wrap gap-4">
+                {avatarGradients.map(grad => (
+                  <button
+                    key={grad}
+                    type="button"
+                    onClick={() => setAvatarUrl(grad)}
+                    className={`h-10 w-10 rounded-2xl bg-gradient-to-tr ${grad} border-2 transition-all flex items-center justify-center ${
+                      avatarUrl === grad ? 'border-white scale-110 shadow-lg shadow-white/5' : 'border-transparent opacity-40 hover:opacity-100'
+                    }`}
+                  >
+                    {avatarUrl === grad && <Check className="h-4 w-4 text-white" />}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* Feedback Alerts */}
+            {(successMsg || errorMsg) && (
+              <div className={`flex items-center gap-3 p-4 rounded-2xl text-xs font-bold animate-slide-up ${
+                successMsg ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+              }`}>
+                {successMsg ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                <span>{successMsg || errorMsg}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSubmitting || !displayName.trim()}
+              className="w-full py-4 bg-accent hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-2xl text-sm font-black uppercase tracking-widest transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-2 group active:scale-[0.98]"
+            >
+              {isSubmitting ? (
+                <span className="animate-spin h-5 w-5 border-3 border-white border-t-transparent rounded-full" />
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4 group-hover:animate-pulse" />
+                  Update Neural Profile
+                </>
+              )}
+            </button>
+
+          </form>
         </div>
 
-        {/* Feedback alerts */}
-        {successMsg && (
-          <div className="flex items-center gap-2 p-3 bg-success/10 border border-success/20 rounded-xl text-success text-[10px] font-bold">
-            <Check className="h-4 w-4 shrink-0" />
-            <span>{successMsg}</span>
-          </div>
-        )}
-
-        {errorMsg && (
-          <div className="flex items-center gap-2 p-3 bg-danger/10 border border-danger/20 rounded-xl text-danger text-[10px] font-bold">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        {/* Action Button */}
-        <button
-          type="submit"
-          disabled={isSubmitting || !displayName.trim()}
-          className="w-full py-3 bg-accent hover:bg-accent-hover disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all outline-none flex items-center justify-center gap-1.5"
-        >
-          {isSubmitting ? (
-            <span className="animate-spin h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full" />
-          ) : (
-            <>
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Save Changes</span>
-            </>
-          )}
-        </button>
-
-      </form>
+      </div>
 
     </div>
   );

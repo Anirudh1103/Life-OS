@@ -29,10 +29,6 @@ export const LogActivityModal: React.FC<LogActivityModalProps> = ({
   const [startTime, setStartTime] = useState('18:00');
   const [duration, setDuration] = useState('60');
   const [distance, setDistance] = useState('');
-  const [calories, setCalories] = useState('');
-  const [avgHeartRate, setAvgHeartRate] = useState('');
-  const [maxHeartRate, setMaxHeartRate] = useState('');
-  const [steps, setSteps] = useState('');
   const [intensity, setIntensity] = useState<'low' | 'medium' | 'high'>('medium');
   const [notes, setNotes] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
@@ -66,10 +62,6 @@ export const LogActivityModal: React.FC<LogActivityModalProps> = ({
       
       // Reset optional fields
       setDistance('');
-      setCalories('');
-      setAvgHeartRate('');
-      setMaxHeartRate('');
-      setSteps('');
       setIntensity('medium');
       setNotes('');
       setPhotoUrl('');
@@ -90,19 +82,6 @@ export const LogActivityModal: React.FC<LogActivityModalProps> = ({
       const startD = new Date(startedAtStr);
       const endD = new Date(startD.getTime() + parseInt(duration) * 60000);
 
-      // Estimate calories based on duration & activity type if not provided
-      let finalCalories = calories ? parseInt(calories) : null;
-      if (!finalCalories && activeType) {
-        // Simple heuristic metabolic equivalent
-        const mins = parseInt(duration);
-        if (activeType.slug === 'strength_training') finalCalories = mins * 6;
-        else if (activeType.slug === 'badminton') finalCalories = mins * 7;
-        else if (activeType.slug === 'swimming') finalCalories = mins * 8;
-        else if (activeType.slug === 'running') finalCalories = mins * 9;
-        else if (activeType.slug === 'walking') finalCalories = mins * 4;
-        else if (activeType.slug === 'yoga') finalCalories = mins * 3.5;
-      }
-
       await dbService.createFitnessActivity({
         user_id: userId,
         activity_type_id: typeId,
@@ -110,10 +89,10 @@ export const LogActivityModal: React.FC<LogActivityModalProps> = ({
         ended_at: endD.toISOString(),
         duration_minutes: parseInt(duration),
         distance: distance ? parseFloat(distance) : null,
-        calories: finalCalories,
-        avg_heart_rate: avgHeartRate ? parseInt(avgHeartRate) : null,
-        max_heart_rate: maxHeartRate ? parseInt(maxHeartRate) : null,
-        steps: steps ? parseInt(steps) : null,
+        calories: null,
+        avg_heart_rate: null,
+        max_heart_rate: null,
+        steps: null,
         intensity,
         notes: notes.trim() || null,
         photos: photoUrl.trim() ? [photoUrl.trim()] : []
@@ -223,86 +202,26 @@ export const LogActivityModal: React.FC<LogActivityModalProps> = ({
             </div>
 
             {/* Dynamic fields based on selected type */}
-            <div className="border-t border-border/10 pt-4 space-y-4">
-              <h4 className="text-[10px] uppercase font-extrabold text-accent/80 tracking-wider mb-1">Performance Details (Optional)</h4>
+            {activeType && ['running', 'swimming', 'walking'].includes(activeType.slug) && (
+              <div className="border-t border-border/10 pt-4 space-y-4">
+                <h4 className="text-[10px] uppercase font-extrabold text-accent/80 tracking-wider mb-1">Performance Details (Optional)</h4>
 
-              <div className="grid grid-cols-2 gap-4">
-                {/* Distance for Running/Swimming/Walking */}
-                {activeType && ['running', 'swimming', 'walking'].includes(activeType.slug) && (
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-text-secondary/70 tracking-wider mb-1.5">
-                      Distance ({activeType.slug === 'swimming' ? 'meters' : 'km'})
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="e.g. 5.2"
-                      value={distance}
-                      onChange={(e) => setDistance(e.target.value)}
-                      className="w-full bg-surface-hover/30 border border-border/15 rounded-xl px-3.5 py-2 text-text-primary focus:border-accent/40 focus:outline-none"
-                    />
-                  </div>
-                )}
-
-                {/* Steps for Walking/Running */}
-                {activeType && ['walking', 'running'].includes(activeType.slug) && (
-                  <div>
-                    <label className="block text-[10px] uppercase font-bold text-text-secondary/70 tracking-wider mb-1.5">Steps</label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="e.g. 8000"
-                      value={steps}
-                      onChange={(e) => setSteps(e.target.value)}
-                      className="w-full bg-surface-hover/30 border border-border/15 rounded-xl px-3.5 py-2 text-text-primary focus:border-accent/40 focus:outline-none"
-                    />
-                  </div>
-                )}
-
-                {/* Calories */}
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-text-secondary/70 tracking-wider mb-1.5">Calories Burned (kcal)</label>
+                  <label className="block text-[10px] uppercase font-bold text-text-secondary/70 tracking-wider mb-1.5">
+                    Distance ({activeType.slug === 'swimming' ? 'meters' : 'km'})
+                  </label>
                   <input
                     type="number"
+                    step="0.01"
                     min="0"
-                    placeholder="Leave blank to auto-calculate"
-                    value={calories}
-                    onChange={(e) => setCalories(e.target.value)}
+                    placeholder="e.g. 5.2"
+                    value={distance}
+                    onChange={(e) => setDistance(e.target.value)}
                     className="w-full bg-surface-hover/30 border border-border/15 rounded-xl px-3.5 py-2 text-text-primary focus:border-accent/40 focus:outline-none"
                   />
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                {/* Avg Heart Rate */}
-                <div>
-                  <label className="block text-[10px] uppercase font-bold text-text-secondary/70 tracking-wider mb-1.5">Avg Heart Rate (bpm)</label>
-                  <input
-                    type="number"
-                    min="40"
-                    max="220"
-                    placeholder="e.g. 132"
-                    value={avgHeartRate}
-                    onChange={(e) => setAvgHeartRate(e.target.value)}
-                    className="w-full bg-surface-hover/30 border border-border/15 rounded-xl px-3.5 py-2 text-text-primary focus:border-accent/40 focus:outline-none"
-                  />
-                </div>
-                {/* Max Heart Rate */}
-                <div>
-                  <label className="block text-[10px] uppercase font-bold text-text-secondary/70 tracking-wider mb-1.5">Max Heart Rate (bpm)</label>
-                  <input
-                    type="number"
-                    min="40"
-                    max="220"
-                    placeholder="e.g. 165"
-                    value={maxHeartRate}
-                    onChange={(e) => setMaxHeartRate(e.target.value)}
-                    className="w-full bg-surface-hover/30 border border-border/15 rounded-xl px-3.5 py-2 text-text-primary focus:border-accent/40 focus:outline-none"
-                  />
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Photo URL */}
             <div className="border-t border-border/10 pt-4">

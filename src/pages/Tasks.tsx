@@ -7,13 +7,16 @@ import { TaskDetailDrawer } from '../components/tasks/TaskDetailDrawer';
 import { Calendar } from '../components/dashboard/Calendar';
 import { Search } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export const Tasks: React.FC = () => {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   
-  // Workspace selection from query parameter
-  const workspace = (searchParams.get('space') as 'personal' | 'work') || 'personal';
+  // Workspace selection state to prevent router HMR re-render flicker
+  const [workspace, setWorkspace] = useState<'personal' | 'work'>(
+    (searchParams.get('space') as 'personal' | 'work') || 'personal'
+  );
 
   // Sub-tabs navigation (Tasks, Kanban, Calendar, Analytics)
   const [activeSubTab, setActiveSubTab] = useState<'tasks' | 'kanban' | 'calendar' | 'analytics'>('tasks');
@@ -32,13 +35,21 @@ export const Tasks: React.FC = () => {
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
     loadTasks();
+
+    const handleUpdate = () => {
+      loadTasks();
+    };
+    window.addEventListener('life_os_data_update', handleUpdate);
+    return () => window.removeEventListener('life_os_data_update', handleUpdate);
   }, [user, workspace]);
 
   const loadTasks = async () => {
     if (!user) return;
+    setIsPending(true);
     try {
       const data = await dbService.getTasks(user.id, workspace);
       setTasks(data);
@@ -49,6 +60,8 @@ export const Tasks: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to load tasks:', err);
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -120,6 +133,7 @@ export const Tasks: React.FC = () => {
     const endOfWeek = new Date(today);
     endOfWeek.setDate(today.getDate() + (7 - today.getDay()));
 
+    const overdueList: Task[] = [];
     const todayList: Task[] = [];
     const weekList: Task[] = [];
     const laterList: Task[] = [];
@@ -129,19 +143,25 @@ export const Tasks: React.FC = () => {
         laterList.push(t);
         return;
       }
+      
       const due = new Date(t.due_at);
-      due.setHours(0, 0, 0, 0);
-
-      if (due.getTime() === today.getTime()) {
-        todayList.push(t);
-      } else if (due.getTime() > today.getTime() && due.getTime() <= endOfWeek.getTime()) {
-        weekList.push(t);
+      const now = new Date();
+      
+      if (due.getTime() < now.getTime() && due.toDateString() !== now.toDateString()) {
+        overdueList.push(t);
       } else {
-        laterList.push(t);
+        due.setHours(0, 0, 0, 0);
+        if (due.getTime() === today.getTime()) {
+          todayList.push(t);
+        } else if (due.getTime() > today.getTime() && due.getTime() <= endOfWeek.getTime()) {
+          weekList.push(t);
+        } else {
+          laterList.push(t);
+        }
       }
     });
 
-    return { todayList, weekList, laterList };
+    return { overdueList, todayList, weekList, laterList };
   };
 
   const grouped = getGroupedTimelineTasks();
@@ -171,32 +191,70 @@ export const Tasks: React.FC = () => {
       
       {/* 1. HEADER ROW */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/10 pb-4">
-        <div>
-          <h1 className="text-base font-bold tracking-tight text-text-primary uppercase tracking-wider">
-            {workspace === 'work' ? '💼 Work' : '🏠 Personal'}
-          </h1>
-          <p className="text-[10px] text-text-secondary/70 font-semibold mt-0.5">
-            {totalCount} tasks &middot; {pendingCount} pending &middot; {completedCount} completed &middot; <span className={overdueCount > 0 ? 'text-danger font-bold' : ''}>{overdueCount} overdue</span>
-          </p>
+        {/* Workspace selector pills with smooth sliding background */}
+        <div className="bg-surface/40 backdrop-blur-md border border-border/10 rounded-full p-1 flex gap-1 items-center self-start relative">
+          <button
+            onClick={() => setWorkspace('personal')}
+            className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 relative z-10 ${
+              workspace === 'personal' ? 'text-emerald-400' : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <span>🏠</span>
+            <span>Personal</span>
+            {workspace === 'personal' && (
+              <motion.div
+                layoutId="activeWorkspace"
+                className="absolute inset-0 bg-emerald-400/10 border border-emerald-400/20 rounded-full -z-10"
+                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+              />
+            )}
+          </button>
+          <button
+            onClick={() => setWorkspace('work')}
+            className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 relative z-10 ${
+              workspace === 'work' ? 'text-indigo-400' : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <span>💼</span>
+            <span>Work</span>
+            {workspace === 'work' && (
+              <motion.div
+                layoutId="activeWorkspace"
+                className="absolute inset-0 bg-indigo-400/10 border border-indigo-400/20 rounded-full -z-10"
+                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+              />
+            )}
+          </button>
         </div>
 
         {/* capsule active sub-tab view switcher */}
-        <div className="bg-surface/20 border border-border/10 rounded-xl p-1 flex gap-1 self-start sm:self-auto">
+        <div className="flex gap-4 self-start sm:self-auto items-center">
           {(['tasks', 'kanban', 'calendar', 'analytics'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveSubTab(tab)}
-              className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all outline-none ${
+              className={`text-[10px] font-black uppercase tracking-[0.2em] relative py-1 px-1 transition-colors outline-none ${
                 activeSubTab === tab 
-                  ? 'bg-accent/15 border border-accent/20 text-accent font-extrabold shadow-sm' 
-                  : 'text-text-secondary hover:text-text-primary'
+                  ? 'text-accent'
+                  : 'text-text-secondary/40 hover:text-text-primary'
               }`}
             >
-              {tab}
+              <span className="relative z-10">{tab}</span>
+              {activeSubTab === tab && (
+                <motion.span
+                  layoutId="activeSubTab"
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-full shadow-[0_0_8px_rgba(99,102,241,0.5)]"
+                />
+              )}
             </button>
           ))}
         </div>
       </div>
+
+      {/* Stats counter row */}
+      <p className="text-[10px] text-text-secondary/50 font-bold -mt-2">
+        {totalCount} total &middot; {pendingCount} pending &middot; {completedCount} completed &middot; <span className={overdueCount > 0 ? 'text-red-400 font-bold' : ''}>{overdueCount} overdue</span>
+      </p>
 
       {/* 2. SUB-VIEW SWITCHER CONTENT */}
       {activeSubTab === 'tasks' && (
@@ -271,10 +329,42 @@ export const Tasks: React.FC = () => {
           )}
 
           {/* TIMELINE TASKS LIST */}
-          <div className="space-y-6">
+          <motion.div 
+            layout
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.4 }}
+            className={`space-y-6 ${isPending ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}
+          >
+            
+            {/* Overdue */}
+            {grouped.overdueList.length > 0 && (
+              <motion.div layout className="space-y-1">
+                <div className="flex justify-between items-center px-1">
+                  <h3 className="text-[10px] font-black text-red-400 uppercase tracking-wider">Overdue</h3>
+                  <span className="text-[9px] font-bold text-red-400/60">{grouped.overdueList.length}</span>
+                </div>
+                <div className="divide-y divide-border/10">
+                  <AnimatePresence mode="popLayout">
+                    {grouped.overdueList.map(t => (
+                      <motion.div
+                        key={t.id}
+                        layout
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.18 }}
+                      >
+                        <TaskItem task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            )}
             
             {/* Today */}
-            <div className="space-y-1">
+            <motion.div layout className="space-y-1">
               <div className="flex justify-between items-center px-1">
                 <h3 className="text-[10px] font-black text-text-secondary/70 uppercase tracking-wider">Today</h3>
                 <span className="text-[9px] font-bold text-text-secondary/40">{grouped.todayList.length}</span>
@@ -283,15 +373,26 @@ export const Tasks: React.FC = () => {
                 {grouped.todayList.length === 0 ? (
                   <p className="text-[9px] text-text-secondary/35 font-medium py-3 px-2">No tasks due today</p>
                 ) : (
-                  grouped.todayList.map(t => (
-                    <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
-                  ))
+                  <AnimatePresence mode="popLayout">
+                    {grouped.todayList.map(t => (
+                      <motion.div
+                        key={t.id}
+                        layout
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.18 }}
+                      >
+                        <TaskItem task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 )}
               </div>
-            </div>
+            </motion.div>
 
             {/* This Week */}
-            <div className="space-y-1">
+            <motion.div layout className="space-y-1">
               <div className="flex justify-between items-center px-1">
                 <h3 className="text-[10px] font-black text-text-secondary/70 uppercase tracking-wider">This Week</h3>
                 <span className="text-[9px] font-bold text-text-secondary/40">{grouped.weekList.length}</span>
@@ -300,15 +401,26 @@ export const Tasks: React.FC = () => {
                 {grouped.weekList.length === 0 ? (
                   <p className="text-[9px] text-text-secondary/35 font-medium py-3 px-2">No tasks due this week</p>
                 ) : (
-                  grouped.weekList.map(t => (
-                    <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
-                  ))
+                  <AnimatePresence mode="popLayout">
+                    {grouped.weekList.map(t => (
+                      <motion.div
+                        key={t.id}
+                        layout
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.18 }}
+                      >
+                        <TaskItem task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 )}
               </div>
-            </div>
+            </motion.div>
 
             {/* Later */}
-            <div className="space-y-1">
+            <motion.div layout className="space-y-1">
               <div className="flex justify-between items-center px-1">
                 <h3 className="text-[10px] font-black text-text-secondary/70 uppercase tracking-wider">Later</h3>
                 <span className="text-[9px] font-bold text-text-secondary/40">{grouped.laterList.length}</span>
@@ -317,16 +429,27 @@ export const Tasks: React.FC = () => {
                 {grouped.laterList.length === 0 ? (
                   <p className="text-[9px] text-text-secondary/35 font-medium py-3 px-2">No tasks scheduled for later</p>
                 ) : (
-                  grouped.laterList.map(t => (
-                    <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
-                  ))
+                  <AnimatePresence mode="popLayout">
+                    {grouped.laterList.map(t => (
+                      <motion.div
+                        key={t.id}
+                        layout
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.18 }}
+                      >
+                        <TaskItem task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 )}
               </div>
-            </div>
+            </motion.div>
 
             {/* Completed collapsible view */}
             {completedCount > 0 && (
-              <div className="space-y-2 pt-4 border-t border-border/10">
+              <motion.div layout className="space-y-2 pt-4 border-t border-border/10">
                 <button 
                   onClick={() => setShowCompleted(!showCompleted)}
                   className="text-[9px] font-black uppercase tracking-widest text-text-secondary hover:text-text-primary flex items-center gap-1.5 outline-none"
@@ -335,15 +458,26 @@ export const Tasks: React.FC = () => {
                 </button>
                 {showCompleted && (
                   <div className="divide-y divide-border/10">
-                    {filteredTasks.filter(t => t.is_completed).map(t => (
-                      <TaskItem key={t.id} task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
-                    ))}
+                    <AnimatePresence mode="popLayout">
+                      {filteredTasks.filter(t => t.is_completed).map(t => (
+                        <motion.div
+                          key={t.id}
+                          layout
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.18 }}
+                        >
+                          <TaskItem task={t} isSelected={selectedTask?.id === t.id} onSelect={() => setSelectedTask(t)} onTaskUpdated={loadTasks} />
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
                   </div>
                 )}
-              </div>
+              </motion.div>
             )}
 
-          </div>
+          </motion.div>
 
         </div>
       )}

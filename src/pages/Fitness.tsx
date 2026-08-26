@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { dbService, type FitnessActivity, type RoutineItem, type BodyMeasurement } from '../services/supabase';
+import { dbService, type FitnessActivity, type BodyMeasurement } from '../services/supabase';
 import { FitnessDashboard } from '../components/fitness/FitnessDashboard';
 import { ActivityLogTab } from '../components/fitness/ActivityLogTab';
 import { RoutinePlannerTab } from '../components/fitness/RoutinePlannerTab';
@@ -20,28 +20,11 @@ export const Fitness: React.FC = () => {
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [showLogModal, setShowLogModal] = useState(false);
 
-  // Pre-fill parameters when logging a planned routine item
-  const [defaultLogTypeSlug, setDefaultLogTypeSlug] = useState<string | undefined>(undefined);
-  const [defaultLogDate, setDefaultLogDate] = useState<string | undefined>(undefined);
-
   // States
   const [activities, setActivities] = useState<FitnessActivity[]>([]);
   const [streak, setStreak] = useState<{ current: number; best: number }>({ current: 0, best: 0 });
-  const [routineItems, setRoutineItems] = useState<RoutineItem[]>([]);
   const [measurements, setMeasurements] = useState<BodyMeasurement[]>([]);
-  
   const [loading, setLoading] = useState(true);
-  const [weekStartStr, setWeekStartStr] = useState<string>('');
-
-  // Initializing week start to current Monday
-  useEffect(() => {
-    const today = new Date();
-    const currentDay = today.getDay();
-    const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + distanceToMonday);
-    setWeekStartStr(monday.toISOString().split('T')[0]);
-  }, []);
 
   const loadAllData = async () => {
     if (!user) return;
@@ -55,42 +38,28 @@ export const Fitness: React.FC = () => {
       const strk = await dbService.getFitnessStreak(user.id);
       setStreak(strk);
 
-      // 3. Fetch weekly routines
-      if (weekStartStr) {
-        const routine = await dbService.getOrCreateWeeklyRoutine(user.id, weekStartStr);
-        setRoutineItems(routine.items || []);
-      }
-
-      // 4. Fetch body measurements
+      // 3. Fetch body measurements
       const metrics = await dbService.getBodyMeasurements(user.id);
       setMeasurements(metrics);
 
     } catch (err) {
-      console.error('Failed to load fitness data', err);
+      console.error('Failed to load fitness data:', err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (user && weekStartStr) {
+    if (user) {
       loadAllData();
+
+      const handleUpdate = () => {
+        loadAllData();
+      };
+      window.addEventListener('life_os_data_update', handleUpdate);
+      return () => window.removeEventListener('life_os_data_update', handleUpdate);
     }
-  }, [user, weekStartStr]);
-
-  // Handle log completed planned trigger
-  const handleTriggerLogPlanned = (item: RoutineItem) => {
-    // Determine the date of that day in the current active week
-    const monday = new Date(weekStartStr);
-    const dayOffset = item.day_of_week === 0 ? 6 : item.day_of_week - 1; // Mon=1, Sun=0 mapping
-    const targetDate = new Date(monday);
-    targetDate.setDate(monday.getDate() + dayOffset);
-    
-    setDefaultLogDate(targetDate.toISOString().split('T')[0]);
-    setDefaultLogTypeSlug(item.activity_type?.slug);
-    setShowLogModal(true);
-  };
-
+  }, [user]);
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -152,8 +121,6 @@ export const Fitness: React.FC = () => {
               activities={activities}
               streak={streak}
               onLogActivityClick={() => {
-                setDefaultLogDate(undefined);
-                setDefaultLogTypeSlug(undefined);
                 setShowLogModal(true);
               }}
               onViewAllClick={() => setActiveTab('activities')}
@@ -165,8 +132,6 @@ export const Fitness: React.FC = () => {
             <ActivityLogTab
               activities={activities}
               onLogActivityClick={() => {
-                setDefaultLogDate(undefined);
-                setDefaultLogTypeSlug(undefined);
                 setShowLogModal(true);
               }}
               onActivitySelect={setSelectedActivityId}
@@ -175,19 +140,14 @@ export const Fitness: React.FC = () => {
 
           {activeTab === 'routine' && (
             <RoutinePlannerTab
-              routineItems={routineItems}
               userId={user.id}
-              weekStartStr={weekStartStr}
-              onWeekChange={setWeekStartStr}
               onRefreshItems={loadAllData}
-              onTriggerLogPlanned={handleTriggerLogPlanned}
             />
           )}
 
           {activeTab === 'strength' && (
             <StrengthTrainingTab
               userId={user.id}
-              onRefreshActivities={loadAllData}
             />
           )}
 
@@ -215,13 +175,9 @@ export const Fitness: React.FC = () => {
         isOpen={showLogModal}
         onClose={() => {
           setShowLogModal(false);
-          setDefaultLogDate(undefined);
-          setDefaultLogTypeSlug(undefined);
         }}
         onActivityLogged={loadAllData}
         userId={user.id}
-        defaultDate={defaultLogDate}
-        defaultTypeSlug={defaultLogTypeSlug}
       />
 
     </div>

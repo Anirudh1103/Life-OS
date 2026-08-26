@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Glowing Arc Reactor Outer Core Ring -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,54m-38,0a38,38 0,1 1,76 0a38,38 0,1 1,-76 0"
+        android:strokeWidth="1.5"
+        android:strokeColor="#4D8A5DF2" />
+
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,54m-34,0a34,34 0,1 1,68 0a34,34 0,1 1,-68 0"
+        android:strokeWidth="2.5"
+        android:strokeColor="#8A5DF2" />
+
+    <!-- Cyan Inner Core Segment Rings -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,54m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0"
+        android:strokeWidth="3.5"
+        android:strokeColor="#2DE1FC"
+        android:strokeDashArray="18,12" />
+
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,54m-18,0a18,18 0,1 1,36 0a18,18 0,1 1,-36 0"
+        android:strokeWidth="2"
+        android:strokeColor="#992DE1FC"
+        android:strokeDashArray="4,8" />
+
+    <!-- Glowing Cyan Center Node -->
+    <path
+        android:fillColor="#2DE1FC"
+        android:pathData="M54,54m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0" />
+
+    <!-- Center Sparkle Point -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,54m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+
+    <!-- Accent Green Triangles (Auxiliary Power Lines) -->
+    <path
+        android:fillColor="#00FFC6"
+        android:pathData="M54,12L58,20H50Z" />
+    <path
+        android:fillColor="#00FFC6"
+        android:pathData="M54,96L58,88H50Z" />
+    <path
+        android:fillColor="#00FFC6"
+        android:pathData="M12,54L20,58V50Z" />
+    <path
+        android:fillColor="#00FFC6"
+        android:pathData="M96,54L88,58V50Z" />
+</vector>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { type FitnessActivity } from '../../services/supabase';
-import { Dumbbell, Activity, Waves, Timer, Footprints, Sparkles, Plus, Clock, Flame, Heart, ChevronRight, Search } from 'lucide-react';
+import { Dumbbell, Activity, Waves, Timer, Footprints, Sparkles, Plus, Clock, ChevronRight, Search } from 'lucide-react';
 
 interface ActivityLogTabProps {
   activities: FitnessActivity[];
@@ -207,18 +207,6 @@ export const ActivityLogTab: React.FC<ActivityLogTabProps> = ({
                             <Clock className="h-3.5 w-3.5 text-text-secondary/40" />
                             <span className="text-text-primary font-black text-xs">{act.duration_minutes}</span> min
                           </div>
-                          {act.calories && (
-                            <div className="flex items-center gap-1">
-                              <Flame className="h-3.5 w-3.5 text-text-secondary/40" />
-                              <span className="text-text-primary font-black text-xs">{act.calories}</span> kcal
-                            </div>
-                          )}
-                          {act.avg_heart_rate && (
-                            <div className="flex items-center gap-1">
-                              <Heart className="h-3.5 w-3.5 text-text-secondary/40" />
-                              <span className="text-text-primary font-black text-xs">{act.avg_heart_rate}</span> bpm
-                            </div>
-                          )}
                         </div>
 
                         <ChevronRight className="h-5 w-5 text-text-secondary/30 group-hover:text-text-primary group-hover:translate-x-0.5 transition-all hidden sm:block" />

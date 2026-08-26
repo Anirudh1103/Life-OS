@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dbService, type FitnessActivity } from '../../services/supabase';
-import { X, Calendar, Clock, Heart, Footprints, Award, Trash2, Camera, Plus, Loader2 } from 'lucide-react';
+import { X, Calendar, Clock, Award, Trash2, Camera, Plus, Loader2 } from 'lucide-react';
 
 interface ActivityDetailDrawerProps {
   activityId: string | null;
@@ -187,14 +187,10 @@ export const ActivityDetailDrawer: React.FC<ActivityDetailDrawerProps> = ({
             </div>
 
             {/* Quick Metrics Bar Grid */}
-            <div className="grid grid-cols-3 gap-3 border-y border-border/10 py-5 select-none text-center">
+            <div className="grid grid-cols-2 gap-3 border-y border-border/10 py-5 select-none text-center">
               <div>
                 <p className="text-[9px] uppercase font-bold text-text-secondary/50 tracking-wider">Duration</p>
                 <p className="text-sm font-black text-text-primary mt-1">{activity.duration_minutes} <span className="text-[10px] font-semibold text-text-secondary/70">min</span></p>
-              </div>
-              <div>
-                <p className="text-[9px] uppercase font-bold text-text-secondary/50 tracking-wider">Calories</p>
-                <p className="text-sm font-black text-text-primary mt-1">{activity.calories || '—'} <span className="text-[10px] font-semibold text-text-secondary/70">kcal</span></p>
               </div>
               <div>
                 <p className="text-[9px] uppercase font-bold text-text-secondary/50 tracking-wider">Intensity</p>
@@ -203,43 +199,19 @@ export const ActivityDetailDrawer: React.FC<ActivityDetailDrawerProps> = ({
             </div>
 
             {/* Optional Stats list */}
-            {(activity.avg_heart_rate || activity.steps || activity.distance) && (
-              <div className="grid grid-cols-2 gap-3.5">
-                {activity.avg_heart_rate && (
-                  <div className="glass-panel p-3 rounded-xl border border-border/10 flex items-center gap-3">
-                    <div className="h-8.5 w-8.5 rounded-lg bg-red-500/10 text-red-400 flex items-center justify-center shrink-0">
-                      <Heart className="h-4.5 w-4.5" />
-                    </div>
-                    <div>
-                      <p className="text-[8px] uppercase font-bold text-text-secondary/60">Heart Rate</p>
-                      <p className="text-[11px] font-bold text-text-primary mt-0.5">{activity.avg_heart_rate} <span className="text-[9px] font-semibold text-text-secondary/80">avg bpm</span></p>
-                    </div>
+            {activity.distance && (
+              <div className="grid grid-cols-1 gap-3.5">
+                <div className="glass-panel p-3 rounded-xl border border-border/10 flex items-center gap-3">
+                  <div className="h-8.5 w-8.5 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0">
+                    <Award className="h-4.5 w-4.5" />
                   </div>
-                )}
-                {activity.steps && (
-                  <div className="glass-panel p-3 rounded-xl border border-border/10 flex items-center gap-3">
-                    <div className="h-8.5 w-8.5 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
-                      <Footprints className="h-4.5 w-4.5" />
-                    </div>
-                    <div>
-                      <p className="text-[8px] uppercase font-bold text-text-secondary/60">Steps Logged</p>
-                      <p className="text-[11px] font-bold text-text-primary mt-0.5">{activity.steps.toLocaleString()}</p>
-                    </div>
+                  <div>
+                    <p className="text-[8px] uppercase font-bold text-text-secondary/60">Distance Travelled</p>
+                    <p className="text-[11px] font-bold text-text-primary mt-0.5">
+                      {activity.distance} <span className="text-[9px] font-semibold text-text-secondary/80">{activity.activity_type?.slug === 'swimming' ? 'meters' : 'km'}</span>
+                    </p>
                   </div>
-                )}
-                {activity.distance && (
-                  <div className="glass-panel p-3 rounded-xl border border-border/10 flex items-center gap-3 col-span-2">
-                    <div className="h-8.5 w-8.5 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0">
-                      <Award className="h-4.5 w-4.5" />
-                    </div>
-                    <div>
-                      <p className="text-[8px] uppercase font-bold text-text-secondary/60">Distance Travelled</p>
-                      <p className="text-[11px] font-bold text-text-primary mt-0.5">
-                        {activity.distance} <span className="text-[9px] font-semibold text-text-secondary/80">{activity.activity_type?.slug === 'swimming' ? 'meters' : 'km'}</span>
-                      </p>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
             )}
 
@@ -252,31 +224,6 @@ export const ActivityDetailDrawer: React.FC<ActivityDetailDrawerProps> = ({
                 </p>
               </div>
             )}
-
-            {/* Detailed HR / Calorie Breakdown Table */}
-            <div className="space-y-2 border-t border-border/5 pt-4">
-              <h4 className="text-[10px] uppercase font-bold text-text-secondary/70 tracking-wider">Metrics Table</h4>
-              <div className="glass-panel rounded-xl overflow-hidden border border-border/10 text-xs">
-                <div className="divide-y divide-border/10">
-                  <div className="flex justify-between p-3">
-                    <span className="text-text-secondary font-medium">Avg Heart Rate</span>
-                    <span className="font-bold text-text-primary">{activity.avg_heart_rate ? `${activity.avg_heart_rate} bpm` : '—'}</span>
-                  </div>
-                  <div className="flex justify-between p-3">
-                    <span className="text-text-secondary font-medium">Max Heart Rate</span>
-                    <span className="font-bold text-text-primary">{activity.max_heart_rate ? `${activity.max_heart_rate} bpm` : '—'}</span>
-                  </div>
-                  <div className="flex justify-between p-3">
-                    <span className="text-text-secondary font-medium">Active Calories</span>
-                    <span className="font-bold text-text-primary">{activity.calories ? `${activity.calories} kcal` : '—'}</span>
-                  </div>
-                  <div className="flex justify-between p-3">
-                    <span className="text-text-secondary font-medium">Total Calories (Est.)</span>
-                    <span className="font-bold text-text-primary">{activity.calories ? `${activity.calories + 100} kcal` : '—'}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {/* Photos section */}
             <div className="space-y-3 border-t border-border/5 pt-4">

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { JarvisContainer } from '../jarvis/JarvisContainer';
 import { ShieldCheck, X } from 'lucide-react';
 
 export const AppShell: React.FC = () => {
@@ -16,7 +17,7 @@ export const AppShell: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-text-primary transition-colors duration-300">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#0B0F19] text-text-primary transition-colors duration-300 font-sans">
       {/* Sidebar Navigation */}
       <Sidebar onPlaceholderClick={handlePlaceholderClick} />
 
@@ -24,10 +25,13 @@ export const AppShell: React.FC = () => {
       <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden relative pb-16 md:pb-0">
         <Header />
         
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 relative">
+        <main className="flex-1 overflow-y-auto relative scroll-smooth">
           <Outlet />
         </main>
       </div>
+
+      {/* Master coordinator for Jarvis Orb trigger, STT/TTS loops, and Chat Modal */}
+      <JarvisContainer />
 
       {/* Coming Soon Placeholder Modal overlay */}
       {activePlaceholder && (

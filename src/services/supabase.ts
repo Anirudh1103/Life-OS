@@ -172,76 +172,88 @@ export interface FitnessActivity {
 export interface FitnessRoutine {
   id: string;
   user_id: string;
-  week_start: string;
-  created_at: string;
-  updated_at: string;
-  items?: RoutineItem[];
-}
-
-export interface RoutineItem {
-  id: string;
-  routine_id: string;
-  day_of_week: number;
-  activity_type_id: string;
-  title: string | null;
-  duration_minutes: number;
-  notes: string | null;
-  sort_order: number;
-  is_completed: boolean;
-  completed_activity_id: string | null;
-  created_at: string;
-  updated_at: string;
-  activity_type?: ActivityType;
-}
-
-export interface StrengthPlan {
-  id: string;
-  user_id: string;
   name: string;
   description: string | null;
-  is_active: boolean;
+  start_date: string;
+  end_date: string;
+  status: 'draft' | 'active' | 'archived';
+  source_routine_id: string | null;
   created_at: string;
   updated_at: string;
-  exercises?: StrengthPlanExercise[];
+  days?: FitnessRoutineDay[];
 }
 
-export interface StrengthPlanExercise {
+export interface FitnessRoutineDay {
   id: string;
-  plan_id: string;
+  routine_id: string;
+  day_of_week: number; // 0 = Sunday, 1 = Monday, etc.
+  workout_type: string | null; // e.g. 'Strength Training', 'Rest Day', 'Yoga'
+  body_part: string | null; // e.g. 'Chest', 'Back', 'Legs'
+  is_rest_day: boolean;
+  warmup_type: 'common' | 'custom' | 'both' | 'none';
+  warmup_notes: string | null;
+  stretching_type: 'common' | 'custom' | 'both' | 'none';
+  stretching_notes: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  exercises?: FitnessRoutineExercise[];
+}
+
+export interface FitnessRoutineExercise {
+  id: string;
+  routine_day_id: string;
   exercise_name: string;
-  muscle_group: string | null;
-  sort_order: number;
-  target_sets: number;
-  target_reps: number;
-  target_weight: number | null;
+  exercise_id: string | null;
+  order_index: number;
+  sets: number;
+  reps_min: number;
+  reps_max: number;
+  weight: number | null;
+  duration_seconds: number | null;
   rest_seconds: number;
   notes: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface StrengthSession {
+export interface FitnessWorkoutSession {
   id: string;
   user_id: string;
-  plan_id: string;
+  routine_id: string | null;
+  routine_day_id: string | null;
   started_at: string;
   completed_at: string;
+  status: 'started' | 'completed' | 'cancelled';
   notes: string | null;
   created_at: string;
-  sets?: StrengthSessionSet[];
-  plan_name?: string;
+  updated_at: string;
+  sets?: FitnessWorkoutSet[];
+  // helper fields
+  routine_name?: string;
+  day_workout_type?: string;
 }
 
-export interface StrengthSessionSet {
+export interface FitnessWorkoutSet {
   id: string;
-  session_id: string;
+  workout_session_id: string;
+  routine_exercise_id: string | null;
   exercise_name: string;
   set_number: number;
-  reps: number;
+  planned_reps: number | null;
+  actual_reps: number;
   weight: number;
-  rpe: number | null;
+  completed: boolean;
   notes: string | null;
-  completed_at: string;
+}
+
+export interface FitnessRoutineNotification {
+  id: string;
+  routine_id: string;
+  notification_type: 'routine_ending';
+  scheduled_for: string;
+  sent_at: string | null;
+  created_at: string;
 }
 
 export interface BodyMeasurement {
@@ -424,11 +436,11 @@ const KEYS = {
   TASK_FLOW_HISTORY: 'life_os_task_flow_history',
   FITNESS_ACTIVITIES: 'life_os_fitness_activities',
   FITNESS_ROUTINES: 'life_os_fitness_routines',
-  ROUTINE_ITEMS: 'life_os_routine_items',
-  STRENGTH_PLANS: 'life_os_strength_plans',
-  STRENGTH_PLAN_EXERCISES: 'life_os_strength_plan_exercises',
-  STRENGTH_SESSIONS: 'life_os_strength_sessions',
-  STRENGTH_SESSION_SETS: 'life_os_strength_session_sets',
+  FITNESS_ROUTINE_DAYS: 'life_os_fitness_routine_days',
+  FITNESS_ROUTINE_EXERCISES: 'life_os_fitness_routine_exercises',
+  FITNESS_WORKOUT_SESSIONS: 'life_os_fitness_workout_sessions',
+  FITNESS_WORKOUT_SETS: 'life_os_fitness_workout_sets',
+  FITNESS_ROUTINE_NOTIFICATIONS: 'life_os_fitness_routine_notifications',
   BODY_MEASUREMENTS: 'life_os_body_measurements',
   ACTIVITY_TYPES: 'life_os_activity_types',
   FINANCE_ACCOUNTS: 'life_os_finance_accounts',
@@ -441,8 +453,14 @@ const KEYS = {
   FINANCE_SUBSCRIPTIONS: 'life_os_finance_subscriptions',
   FINANCE_SHARED_SPACES: 'life_os_finance_shared_spaces',
   FINANCE_SHARED_MEMBERS: 'life_os_finance_shared_members',
-  FINANCE_EXPENSE_SPLITS: 'life_os_finance_expense_splits',
-  FINANCE_SETTLEMENTS: 'life_os_finance_settlements',
+  FINANCE_EXPENSE_SPLITS: 'life_os_expense_splits',
+  FINANCE_SETTLEMENTS: 'life_os_settlements',
+};
+
+const dispatchDataUpdate = (type: 'tasks' | 'fitness' | 'finance' | 'learning') => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('life_os_data_update', { detail: { type } }));
+  }
 };
 
 // Seed default data if empty
@@ -899,83 +917,116 @@ const initMockDB = (userId: string) => {
     localStorage.setItem(KEYS.FITNESS_ACTIVITIES, JSON.stringify(defaultActivities));
   }
 
-  // Seed weekly routines
+  // Seed period fitness routines
   if (!localStorage.getItem(KEYS.FITNESS_ROUTINES)) {
-    const today = new Date();
-    const currentDay = today.getDay();
-    const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + distanceToMonday);
-    const mondayStr = monday.toISOString().split('T')[0];
-
-    const defaultRoutine: FitnessRoutine = {
-      id: 'routine-1',
+    const activeRoutine: FitnessRoutine = {
+      id: 'routine-active-1',
       user_id: userId,
-      week_start: mondayStr,
+      name: 'August Strength Routine',
+      description: 'Strength and mobility program for August 2026.',
+      start_date: '2026-08-01',
+      end_date: '2026-08-31',
+      status: 'active',
+      source_routine_id: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
-    localStorage.setItem(KEYS.FITNESS_ROUTINES, JSON.stringify([defaultRoutine]));
-
-    const defaultItems: RoutineItem[] = [
-      { id: 'item-1', routine_id: 'routine-1', day_of_week: 1, activity_type_id: 'act-type-1', title: 'Upper Body Focus', duration_minutes: 60, notes: 'Target pushes & pulls', sort_order: 0, is_completed: true, completed_activity_id: 'act-fit-1', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'item-2', routine_id: 'routine-1', day_of_week: 2, activity_type_id: 'act-type-2', title: 'Match Play', duration_minutes: 90, notes: 'Singles match session', sort_order: 0, is_completed: true, completed_activity_id: 'act-fit-2', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'item-3', routine_id: 'routine-1', day_of_week: 3, activity_type_id: 'act-type-3', title: 'Freestyle Intervals', duration_minutes: 45, notes: '1000m target lap', sort_order: 0, is_completed: true, completed_activity_id: 'act-fit-3', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'item-4', routine_id: 'routine-1', day_of_week: 4, activity_type_id: 'act-type-1', title: 'Lower Body Focus', duration_minutes: 60, notes: 'Squats and lunges', sort_order: 0, is_completed: false, completed_activity_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'item-5', routine_id: 'routine-1', day_of_week: 5, activity_type_id: 'act-type-2', title: '🏸 Casual Games', duration_minutes: 90, notes: 'Doubles match with friends', sort_order: 0, is_completed: false, completed_activity_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'item-6', routine_id: 'routine-1', day_of_week: 6, activity_type_id: 'act-type-6', title: 'Flexibility Routine', duration_minutes: 45, notes: 'Vinyasa flow stretching', sort_order: 0, is_completed: false, completed_activity_id: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
-    ];
-    localStorage.setItem(KEYS.ROUTINE_ITEMS, JSON.stringify(defaultItems));
-  }
-
-  // Seed strength plan
-  if (!localStorage.getItem(KEYS.STRENGTH_PLANS)) {
-    const defaultPlan: StrengthPlan = {
-      id: 'plan-str-1',
+    
+    const archivedRoutine: FitnessRoutine = {
+      id: 'routine-archived-1',
       user_id: userId,
-      name: 'Upper Body Focus',
-      description: 'Dumbbell and bodyweight push/pull routine targeting chest, shoulders, back, and arms',
-      is_active: true,
+      name: 'July Home Routine',
+      description: 'Bodyweight training focused on general fitness.',
+      start_date: '2026-07-01',
+      end_date: '2026-07-31',
+      status: 'archived',
+      source_routine_id: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
-    localStorage.setItem(KEYS.STRENGTH_PLANS, JSON.stringify([defaultPlan]));
 
-    const defaultExercises: StrengthPlanExercise[] = [
-      { id: 'exe-1', plan_id: 'plan-str-1', exercise_name: 'Push Ups', muscle_group: 'Chest & Triceps', sort_order: 0, target_sets: 4, target_reps: 12, target_weight: null, rest_seconds: 60, notes: 'Slow and controlled', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-2', plan_id: 'plan-str-1', exercise_name: 'Dumbbell Bench Press', muscle_group: 'Chest & Shoulders', sort_order: 1, target_sets: 4, target_reps: 10, target_weight: 20, rest_seconds: 90, notes: 'Increase weight next time', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-3', plan_id: 'plan-str-1', exercise_name: 'Shoulder Press', muscle_group: 'Shoulders', sort_order: 2, target_sets: 4, target_reps: 12, target_weight: 12, rest_seconds: 75, notes: 'Good form, avoid arching back', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-4', plan_id: 'plan-str-1', exercise_name: 'Dumbbell Rows', muscle_group: 'Back', sort_order: 3, target_sets: 4, target_reps: 10, target_weight: 18, rest_seconds: 95, notes: 'Keep back straight', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-5', plan_id: 'plan-str-1', exercise_name: 'Bicep Curls', muscle_group: 'Arms', sort_order: 4, target_sets: 3, target_reps: 12, target_weight: 10, rest_seconds: 60, notes: 'Squeeze at top', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-6', plan_id: 'plan-str-1', exercise_name: 'Tricep Dips', muscle_group: 'Arms', sort_order: 5, target_sets: 3, target_reps: 12, target_weight: null, rest_seconds: 60, notes: 'Full range of motion', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    localStorage.setItem(KEYS.FITNESS_ROUTINES, JSON.stringify([activeRoutine, archivedRoutine]));
+
+    // Seed Routine Days (Mon = 1, Tue = 2, Wed = 3, Thu = 4, Fri = 5, Sat = 6, Sun = 0)
+    const activeDays: FitnessRoutineDay[] = [
+      { id: 'day-mon', routine_id: 'routine-active-1', day_of_week: 1, workout_type: 'Strength Training', body_part: 'Chest + Push', is_rest_day: false, warmup_type: 'both', warmup_notes: 'Push-up preparation & Chest activation', stretching_type: 'both', stretching_notes: 'Chest doorway stretch', notes: 'Focus on full range of motion', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-tue', routine_id: 'routine-active-1', day_of_week: 2, workout_type: 'Strength Training', body_part: 'Back + Pull', is_rest_day: false, warmup_type: 'common', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: 'Control the descent', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-wed', routine_id: 'routine-active-1', day_of_week: 3, workout_type: 'Rest Day', body_part: null, is_rest_day: true, warmup_type: 'none', warmup_notes: null, stretching_type: 'none', stretching_notes: null, notes: 'Rest and recover', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-thu', routine_id: 'routine-active-1', day_of_week: 4, workout_type: 'Strength Training', body_part: 'Shoulders', is_rest_day: false, warmup_type: 'common', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: 'Keep posture straight', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-fri', routine_id: 'routine-active-1', day_of_week: 5, workout_type: 'Strength Training', body_part: 'Legs', is_rest_day: false, warmup_type: 'common', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: 'Explode up', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-sat', routine_id: 'routine-active-1', day_of_week: 6, workout_type: 'Yoga', body_part: 'Flexibility', is_rest_day: false, warmup_type: 'none', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: '45 minutes flexibility focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-sun', routine_id: 'routine-active-1', day_of_week: 0, workout_type: 'Rest Day', body_part: null, is_rest_day: true, warmup_type: 'none', warmup_notes: null, stretching_type: 'none', stretching_notes: null, notes: 'Weekly body check-in day', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
     ];
-    localStorage.setItem(KEYS.STRENGTH_PLAN_EXERCISES, JSON.stringify(defaultExercises));
+
+    const archivedDays: FitnessRoutineDay[] = [
+      { id: 'day-archived-mon', routine_id: 'routine-archived-1', day_of_week: 1, workout_type: 'Strength Training', body_part: 'Full Body', is_rest_day: false, warmup_type: 'common', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-archived-wed', routine_id: 'routine-archived-1', day_of_week: 3, workout_type: 'Strength Training', body_part: 'Full Body', is_rest_day: false, warmup_type: 'common', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-archived-fri', routine_id: 'routine-archived-1', day_of_week: 5, workout_type: 'Strength Training', body_part: 'Full Body', is_rest_day: false, warmup_type: 'common', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    ];
+
+    localStorage.setItem(KEYS.FITNESS_ROUTINE_DAYS, JSON.stringify([...activeDays, ...archivedDays]));
+
+    // Seed Routine Exercises
+    const defaultExercises: FitnessRoutineExercise[] = [
+      // Monday Exercises
+      { id: 'exe-1', routine_day_id: 'day-mon', exercise_name: 'Normal Push-ups', exercise_id: null, order_index: 0, sets: 4, reps_min: 12, reps_max: 15, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Chest focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-2', routine_day_id: 'day-mon', exercise_name: 'Incline Push-ups', exercise_id: null, order_index: 1, sets: 3, reps_min: 12, reps_max: 15, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Upper chest focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-3', routine_day_id: 'day-mon', exercise_name: 'Decline Push-ups', exercise_id: null, order_index: 2, sets: 3, reps_min: 12, reps_max: 15, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Lower chest focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-4', routine_day_id: 'day-mon', exercise_name: 'Dumbbell Press', exercise_id: null, order_index: 3, sets: 3, reps_min: 15, reps_max: 20, weight: 15, duration_seconds: null, rest_seconds: 90, notes: 'Heavy chest push', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      
+      // Tuesday Exercises
+      { id: 'exe-5', routine_day_id: 'day-tue', exercise_name: 'Pull-ups', exercise_id: null, order_index: 0, sets: 4, reps_min: 8, reps_max: 10, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Dead hang pull', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-6', routine_day_id: 'day-tue', exercise_name: 'Dumbbell Rows', exercise_id: null, order_index: 1, sets: 3, reps_min: 12, reps_max: 15, weight: 18, duration_seconds: null, rest_seconds: 60, notes: 'Lat pull focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+
+      // Thursday Exercises
+      { id: 'exe-7', routine_day_id: 'day-thu', exercise_name: 'Dumbbell Shoulder Press', exercise_id: null, order_index: 0, sets: 4, reps_min: 10, reps_max: 12, weight: 12, duration_seconds: null, rest_seconds: 60, notes: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-8', routine_day_id: 'day-thu', exercise_name: 'Lateral Raises', exercise_id: null, order_index: 1, sets: 3, reps_min: 15, reps_max: 20, weight: 7.5, duration_seconds: null, rest_seconds: 60, notes: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+
+      // Friday Exercises
+      { id: 'exe-9', routine_day_id: 'day-fri', exercise_name: 'Squats', exercise_id: null, order_index: 0, sets: 4, reps_min: 10, reps_max: 12, weight: 30, duration_seconds: null, rest_seconds: 90, notes: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-10', routine_day_id: 'day-fri', exercise_name: 'Lunges', exercise_id: null, order_index: 1, sets: 3, reps_min: 12, reps_max: 15, weight: 12, duration_seconds: null, rest_seconds: 60, notes: 'per leg', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    ];
+
+    localStorage.setItem(KEYS.FITNESS_ROUTINE_EXERCISES, JSON.stringify(defaultExercises));
   }
 
-  // Seed strength sessions and sets
-  if (!localStorage.getItem(KEYS.STRENGTH_SESSIONS)) {
+  // Seed actual Workout sessions completed
+  if (!localStorage.getItem(KEYS.FITNESS_WORKOUT_SESSIONS)) {
     const today = new Date();
-    const session1: StrengthSession = {
+    const getOffsetDate = (daysAgo: number, timeStr = '19:30:00') => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - daysAgo);
+      const datePart = d.toISOString().split('T')[0];
+      return new Date(`${datePart}T${timeStr}`).toISOString();
+    };
+
+    const session1: FitnessWorkoutSession = {
       id: 'session-str-1',
       user_id: userId,
-      plan_id: 'plan-str-1',
-      started_at: new Date(today.setHours(19, 30, 0)).toISOString(),
-      completed_at: new Date(today.setHours(20, 30, 0)).toISOString(),
-      notes: 'Felt strong today. Dumbbell bench presses felt very solid.',
-      created_at: new Date().toISOString()
+      routine_id: 'routine-active-1',
+      routine_day_id: 'day-mon',
+      started_at: getOffsetDate(0, '19:30:00'),
+      completed_at: getOffsetDate(0, '20:30:00'),
+      status: 'completed',
+      notes: 'Felt strong today. Push-ups felt very solid.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
-    localStorage.setItem(KEYS.STRENGTH_SESSIONS, JSON.stringify([session1]));
 
-    const defaultSets: StrengthSessionSet[] = [
-      { id: 'set-1', session_id: 'session-str-1', exercise_name: 'Dumbbell Bench Press', set_number: 1, reps: 10, weight: 20, rpe: 8, notes: 'Controlled release', completed_at: new Date().toISOString() },
-      { id: 'set-2', session_id: 'session-str-1', exercise_name: 'Dumbbell Bench Press', set_number: 2, reps: 10, weight: 20, rpe: 8, notes: 'Good reps', completed_at: new Date().toISOString() },
-      { id: 'set-3', session_id: 'session-str-1', exercise_name: 'Dumbbell Bench Press', set_number: 3, reps: 10, weight: 22, rpe: 9, notes: 'Tough set but completed', completed_at: new Date().toISOString() },
-      { id: 'set-4', session_id: 'session-str-1', exercise_name: 'Dumbbell Bench Press', set_number: 4, reps: 8, weight: 22, rpe: 10, notes: 'Could only manage 8 reps on final set', completed_at: new Date().toISOString() },
-      { id: 'set-5', session_id: 'session-str-1', exercise_name: 'Push Ups', set_number: 1, reps: 12, weight: 0, rpe: 7, notes: 'Warmup', completed_at: new Date().toISOString() },
-      { id: 'set-6', session_id: 'session-str-1', exercise_name: 'Push Ups', set_number: 2, reps: 12, weight: 0, rpe: 7, notes: 'Steady', completed_at: new Date().toISOString() },
-      { id: 'set-7', session_id: 'session-str-1', exercise_name: 'Push Ups', set_number: 3, reps: 12, weight: 0, rpe: 8, notes: 'Burn', completed_at: new Date().toISOString() }
+    localStorage.setItem(KEYS.FITNESS_WORKOUT_SESSIONS, JSON.stringify([session1]));
+
+    const defaultWorkoutSets: FitnessWorkoutSet[] = [
+      { id: 'wset-1', workout_session_id: 'session-str-1', routine_exercise_id: 'exe-1', exercise_name: 'Normal Push-ups', set_number: 1, planned_reps: 12, actual_reps: 12, weight: 0, completed: true, notes: 'Controlled release' },
+      { id: 'wset-2', workout_session_id: 'session-str-1', routine_exercise_id: 'exe-1', exercise_name: 'Normal Push-ups', set_number: 2, planned_reps: 12, actual_reps: 12, weight: 0, completed: true, notes: 'Good tempo' },
+      { id: 'wset-3', workout_session_id: 'session-str-1', routine_exercise_id: 'exe-1', exercise_name: 'Normal Push-ups', set_number: 3, planned_reps: 15, actual_reps: 15, weight: 0, completed: true, notes: 'Felt great' },
+      { id: 'wset-4', workout_session_id: 'session-str-1', routine_exercise_id: 'exe-1', exercise_name: 'Normal Push-ups', set_number: 4, planned_reps: 15, actual_reps: 14, weight: 0, completed: true, notes: 'Failed on last rep' },
+      
+      { id: 'wset-5', workout_session_id: 'session-str-1', routine_exercise_id: 'exe-4', exercise_name: 'Dumbbell Press', set_number: 1, planned_reps: 15, actual_reps: 15, weight: 15, completed: true, notes: null },
+      { id: 'wset-6', workout_session_id: 'session-str-1', routine_exercise_id: 'exe-4', exercise_name: 'Dumbbell Press', set_number: 2, planned_reps: 15, actual_reps: 15, weight: 15, completed: true, notes: null },
+      { id: 'wset-7', workout_session_id: 'session-str-1', routine_exercise_id: 'exe-4', exercise_name: 'Dumbbell Press', set_number: 3, planned_reps: 20, actual_reps: 18, weight: 15, completed: true, notes: 'Heavy drop' }
     ];
-    localStorage.setItem(KEYS.STRENGTH_SESSION_SETS, JSON.stringify(defaultSets));
+
+    localStorage.setItem(KEYS.FITNESS_WORKOUT_SETS, JSON.stringify(defaultWorkoutSets));
   }
 
   // Seed body measurements
@@ -2253,6 +2304,10 @@ export const dbService = {
       
       // Load details dynamically for mock tasks
       for (const t of workspaceTasks) {
+        t.is_completed = t.is_completed === true || t.is_completed === 'true';
+        t.is_important = t.is_important === true || t.is_important === 'true';
+        t.is_in_today = t.is_in_today === true || t.is_in_today === 'true';
+
         const steps = await this.getTaskSteps(userId, t.id);
         t.steps_count = steps.length;
         t.completed_steps_count = steps.filter(s => s.is_completed).length;
@@ -2277,6 +2332,10 @@ export const dbService = {
 
     // Hydrate counts and flows in parallel
     for (const t of tasks) {
+      t.is_completed = t.is_completed === true || t.is_completed === 'true';
+      t.is_important = t.is_important === true || t.is_important === 'true';
+      t.is_in_today = t.is_in_today === true || t.is_in_today === 'true';
+
       const [{ count: stepsCount }, { count: compStepsCount }, { count: filesCount }, flow] = await Promise.all([
         supabase!.from('task_steps').select('*', { count: 'exact', head: true }).eq('task_id', t.id),
         supabase!.from('task_steps').select('*', { count: 'exact', head: true }).eq('task_id', t.id).eq('is_completed', true),
@@ -2314,6 +2373,7 @@ export const dbService = {
         tags: []
       };
       localStorage.setItem(KEYS.TASKS, JSON.stringify([newTask, ...all]));
+      dispatchDataUpdate('tasks');
       return newTask;
     }
 
@@ -2324,6 +2384,7 @@ export const dbService = {
       .single();
 
     if (error) throw error;
+    dispatchDataUpdate('tasks');
     return {
       ...data,
       steps_count: 0,
@@ -2356,6 +2417,7 @@ export const dbService = {
       };
       all[index] = updatedTask;
       localStorage.setItem(KEYS.TASKS, JSON.stringify(all));
+      dispatchDataUpdate('tasks');
       return updatedTask;
     }
 
@@ -2381,6 +2443,7 @@ export const dbService = {
       .single();
 
     if (error) throw error;
+    dispatchDataUpdate('tasks');
     return data;
   },
 
@@ -2401,6 +2464,7 @@ export const dbService = {
 
       const flows = localStorage.getItem(KEYS.TASK_FLOWS) || '[]';
       localStorage.setItem(KEYS.TASK_FLOWS, JSON.stringify(JSON.parse(flows).filter((f: any) => f.task_id !== taskId)));
+      dispatchDataUpdate('tasks');
       return;
     }
 
@@ -2411,6 +2475,7 @@ export const dbService = {
       .eq('user_id', userId);
 
     if (error) throw error;
+    dispatchDataUpdate('tasks');
   },
 
   // Task Steps CRUD
@@ -2420,6 +2485,10 @@ export const dbService = {
       const all: TaskStep[] = JSON.parse(cached);
       return all
         .filter(s => s.task_id === taskId && s.user_id === userId)
+        .map(s => ({
+          ...s,
+          is_completed: s.is_completed === true || s.is_completed === 'true'
+        }))
         .sort((a, b) => a.sort_order - b.sort_order);
     }
 
@@ -2431,7 +2500,11 @@ export const dbService = {
       .order('sort_order', { ascending: true });
 
     if (error) throw error;
-    return data || [];
+    const steps: TaskStep[] = data || [];
+    return steps.map(s => ({
+      ...s,
+      is_completed: s.is_completed === true || s.is_completed === 'true'
+    }));
   },
 
   async createTaskStep(step: Omit<TaskStep, 'id' | 'is_completed' | 'created_at' | 'updated_at'>): Promise<TaskStep> {
@@ -2446,6 +2519,7 @@ export const dbService = {
         updated_at: new Date().toISOString()
       };
       localStorage.setItem(KEYS.TASK_STEPS, JSON.stringify([...all, newStep]));
+      dispatchDataUpdate('tasks');
       return newStep;
     }
 
@@ -2456,6 +2530,7 @@ export const dbService = {
       .single();
 
     if (error) throw error;
+    dispatchDataUpdate('tasks');
     return data;
   },
 
@@ -2472,6 +2547,7 @@ export const dbService = {
       };
       all[index] = updated;
       localStorage.setItem(KEYS.TASK_STEPS, JSON.stringify(all));
+      dispatchDataUpdate('tasks');
       return updated;
     }
 
@@ -2484,6 +2560,7 @@ export const dbService = {
       .single();
 
     if (error) throw error;
+    dispatchDataUpdate('tasks');
     return data;
   },
 
@@ -2493,6 +2570,7 @@ export const dbService = {
       const all: TaskStep[] = JSON.parse(cached);
       const filtered = all.filter(s => !(s.id === stepId && s.user_id === userId));
       localStorage.setItem(KEYS.TASK_STEPS, JSON.stringify(filtered));
+      dispatchDataUpdate('tasks');
       return;
     }
 
@@ -2503,6 +2581,7 @@ export const dbService = {
       .eq('user_id', userId);
 
     if (error) throw error;
+    dispatchDataUpdate('tasks');
   },
 
   // Task Files (Attachments)
@@ -3132,158 +3211,194 @@ export const dbService = {
     return { current: currentStreak, best: bestStreak };
   },
 
-  async getOrCreateWeeklyRoutine(userId: string, weekStart: string): Promise<FitnessRoutine> {
+  // ==========================================
+  // NEW FITNESS ROUTINE & WORKOUT OPERATIONS
+  // ==========================================
+
+  async getFitnessRoutines(userId: string): Promise<FitnessRoutine[]> {
     if (isMockEnabled) {
       initMockDB(userId);
       const cached = localStorage.getItem(KEYS.FITNESS_ROUTINES) || '[]';
-      const routines: FitnessRoutine[] = JSON.parse(cached);
-      let routine = routines.find(r => r.week_start === weekStart && r.user_id === userId);
+      const all: FitnessRoutine[] = JSON.parse(cached).filter((r: any) => r.user_id === userId);
+      
+      const daysCached = localStorage.getItem(KEYS.FITNESS_ROUTINE_DAYS) || '[]';
+      const days: FitnessRoutineDay[] = JSON.parse(daysCached);
 
-      if (!routine) {
-        const newRoutine: FitnessRoutine = {
-          id: 'routine-' + Math.random().toString(36).substr(2, 9),
-          user_id: userId,
-          week_start: weekStart,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        routines.push(newRoutine);
-        localStorage.setItem(KEYS.FITNESS_ROUTINES, JSON.stringify(routines));
+      const exercisesCached = localStorage.getItem(KEYS.FITNESS_ROUTINE_EXERCISES) || '[]';
+      const exercises: FitnessRoutineExercise[] = JSON.parse(exercisesCached);
 
-        const types = await this.getActivityTypes();
-        const strType = types.find(t => t.slug === 'strength_training');
-        const badType = types.find(t => t.slug === 'badminton');
-        const swType = types.find(t => t.slug === 'swimming');
-        const yogaType = types.find(t => t.slug === 'yoga');
+      const hydrated = all.map(routine => {
+        const routineDays = days
+          .filter(d => d.routine_id === routine.id)
+          .map(d => ({
+            ...d,
+            exercises: exercises.filter(e => e.routine_day_id === d.id).sort((a, b) => a.order_index - b.order_index)
+          }))
+          .sort((a, b) => {
+            // Sort Sun(0) to Sat(6) but let's sort Mon(1) to Sun(0) for a natural weekly progression:
+            const valA = a.day_of_week === 0 ? 7 : a.day_of_week;
+            const valB = b.day_of_week === 0 ? 7 : b.day_of_week;
+            return valA - valB;
+          });
+        return { ...routine, days: routineDays };
+      });
 
-        const defaultItems: Omit<RoutineItem, 'id' | 'created_at' | 'updated_at'>[] = [
-          { routine_id: newRoutine.id, day_of_week: 1, activity_type_id: strType?.id || '', title: 'Upper Body Focus', duration_minutes: 60, notes: 'Target pushes & pulls', sort_order: 0, is_completed: false, completed_activity_id: null },
-          { routine_id: newRoutine.id, day_of_week: 2, activity_type_id: badType?.id || '', title: 'Match Play', duration_minutes: 90, notes: 'Singles game', sort_order: 0, is_completed: false, completed_activity_id: null },
-          { routine_id: newRoutine.id, day_of_week: 3, activity_type_id: swType?.id || '', title: 'Freestyle Swimming', duration_minutes: 45, notes: 'Target laps', sort_order: 0, is_completed: false, completed_activity_id: null },
-          { routine_id: newRoutine.id, day_of_week: 4, activity_type_id: strType?.id || '', title: 'Lower Body Focus', duration_minutes: 60, notes: 'Squats and legs', sort_order: 0, is_completed: false, completed_activity_id: null },
-          { routine_id: newRoutine.id, day_of_week: 6, activity_type_id: yogaType?.id || '', title: 'Flexibility Vinyasa', duration_minutes: 45, notes: 'Restorative yoga stretch', sort_order: 0, is_completed: false, completed_activity_id: null }
-        ];
+      return hydrated;
+    }
 
-        const itemsCached = localStorage.getItem(KEYS.ROUTINE_ITEMS) || '[]';
-        const itemsList: RoutineItem[] = JSON.parse(itemsCached);
-        const newItems: RoutineItem[] = defaultItems.map(item => ({
-          ...item,
-          id: 'item-' + Math.random().toString(36).substr(2, 9),
+    const { data, error } = await supabase!
+      .from('fitness_routines')
+      .select('*')
+      .eq('user_id', userId)
+      .order('start_date', { ascending: false });
+
+    if (error) throw error;
+    
+    const routines: FitnessRoutine[] = data || [];
+    for (const r of routines) {
+      const days = await this.getFitnessRoutineDays(r.id);
+      r.days = days;
+    }
+    return routines;
+  },
+
+  async getFitnessRoutine(userId: string, routineId: string): Promise<FitnessRoutine> {
+    if (isMockEnabled) {
+      const routines = await this.getFitnessRoutines(userId);
+      const match = routines.find(r => r.id === routineId);
+      if (!match) throw new Error('Routine not found');
+      return match;
+    }
+
+    const { data, error } = await supabase!
+      .from('fitness_routines')
+      .select('*')
+      .eq('id', routineId)
+      .eq('user_id', userId)
+      .single();
+
+    if (error) throw error;
+    const routine: FitnessRoutine = data;
+    routine.days = await this.getFitnessRoutineDays(routine.id);
+    return routine;
+  },
+
+  async createFitnessRoutine(
+    userId: string,
+    routine: Omit<FitnessRoutine, 'id' | 'created_at' | 'updated_at'>,
+    days?: Omit<FitnessRoutineDay, 'id' | 'routine_id' | 'created_at' | 'updated_at'>[]
+  ): Promise<FitnessRoutine> {
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINES) || '[]';
+      const all: FitnessRoutine[] = JSON.parse(cached);
+      
+      const newRoutine: FitnessRoutine = {
+        ...routine,
+        id: 'routine-' + Math.random().toString(36).substr(2, 9),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      all.push(newRoutine);
+      localStorage.setItem(KEYS.FITNESS_ROUTINES, JSON.stringify(all));
+
+      if (days && days.length > 0) {
+        const daysCached = localStorage.getItem(KEYS.FITNESS_ROUTINE_DAYS) || '[]';
+        const allDays: FitnessRoutineDay[] = JSON.parse(daysCached);
+        
+        const newDays: FitnessRoutineDay[] = days.map(d => ({
+          ...d,
+          id: 'day-' + Math.random().toString(36).substr(2, 9),
+          routine_id: newRoutine.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }));
 
-        localStorage.setItem(KEYS.ROUTINE_ITEMS, JSON.stringify([...itemsList, ...newItems]));
-        newRoutine.items = newItems;
-        routine = newRoutine;
+        localStorage.setItem(KEYS.FITNESS_ROUTINE_DAYS, JSON.stringify([...allDays, ...newDays]));
+        newRoutine.days = newDays;
       } else {
-        const itemsCached = localStorage.getItem(KEYS.ROUTINE_ITEMS) || '[]';
-        const items: RoutineItem[] = JSON.parse(itemsCached);
-        routine.items = items.filter(i => i.routine_id === routine!.id);
+        // Seed 7 standard days (Mon-Sun) if none provided
+        const daysCached = localStorage.getItem(KEYS.FITNESS_ROUTINE_DAYS) || '[]';
+        const allDays: FitnessRoutineDay[] = JSON.parse(daysCached);
+        const weekdays = [1, 2, 3, 4, 5, 6, 0]; // Mon to Sun
+        const newDays: FitnessRoutineDay[] = weekdays.map(dow => ({
+          id: `day-${Math.random().toString(36).substr(2, 9)}`,
+          routine_id: newRoutine.id,
+          day_of_week: dow,
+          workout_type: dow === 0 || dow === 3 ? 'Rest Day' : 'Strength Training',
+          body_part: dow === 1 ? 'Chest + Push' : dow === 2 ? 'Back + Pull' : dow === 4 ? 'Shoulders' : dow === 5 ? 'Legs' : dow === 6 ? 'Flexibility' : null,
+          is_rest_day: dow === 0 || dow === 3,
+          warmup_type: dow === 0 || dow === 3 ? 'none' : 'common',
+          warmup_notes: null,
+          stretching_type: dow === 0 || dow === 3 ? 'none' : 'common',
+          stretching_notes: null,
+          notes: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }));
+        localStorage.setItem(KEYS.FITNESS_ROUTINE_DAYS, JSON.stringify([...allDays, ...newDays]));
+        newRoutine.days = newDays;
       }
 
-      const activeRoutine = routine!;
-      const types = await this.getActivityTypes();
-      const typeMap = new Map(types.map(t => [t.id, t]));
-      activeRoutine.items = (activeRoutine.items || []).map(i => ({
-        ...i,
-        activity_type: typeMap.get(i.activity_type_id)
-      }));
-
-      return activeRoutine;
+      return newRoutine;
     }
 
-    let { data: routine, error } = await supabase!
+    const { data: newR, error: errR } = await supabase!
       .from('fitness_routines')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('week_start', weekStart)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (!routine) {
-      const { data: newR, error: errC } = await supabase!
-        .from('fitness_routines')
-        .insert({ user_id: userId, week_start: weekStart })
-        .select()
-        .single();
-
-      if (errC) throw errC;
-      routine = newR;
-
-      const types = await this.getActivityTypes();
-      const strType = types.find(t => t.slug === 'strength_training');
-      const badType = types.find(t => t.slug === 'badminton');
-      const swType = types.find(t => t.slug === 'swimming');
-      const yogaType = types.find(t => t.slug === 'yoga');
-
-      const defaultItems = [
-        { routine_id: routine.id, day_of_week: 1, activity_type_id: strType?.id, title: 'Upper Body Focus', duration_minutes: 60, notes: 'Target pushes & pulls' },
-        { routine_id: routine.id, day_of_week: 2, activity_type_id: badType?.id, title: 'Match Play', duration_minutes: 90, notes: 'Singles game' },
-        { routine_id: routine.id, day_of_week: 3, activity_type_id: swType?.id, title: 'Freestyle Swimming', duration_minutes: 45, notes: 'Target laps' },
-        { routine_id: routine.id, day_of_week: 4, activity_type_id: strType?.id, title: 'Lower Body Focus', duration_minutes: 60, notes: 'Squats and legs' },
-        { routine_id: routine.id, day_of_week: 6, activity_type_id: yogaType?.id, title: 'Flexibility Vinyasa', duration_minutes: 45, notes: 'Restorative yoga stretch' }
-      ].filter(item => item.activity_type_id !== undefined);
-
-      await supabase!.from('routine_items').insert(defaultItems);
-    }
-
-    const { data: items, error: errI } = await supabase!
-      .from('routine_items')
-      .select('*, activity_types(*)')
-      .eq('routine_id', routine.id)
-      .order('sort_order', { ascending: true });
-
-    if (errI) throw errI;
-
-    return {
-      ...routine,
-      items: (items || []).map((row: any) => ({
-        ...row,
-        activity_type: row.activity_types
-      }))
-    };
-  },
-
-  async createRoutineItem(item: Omit<RoutineItem, 'id' | 'is_completed' | 'completed_activity_id' | 'created_at' | 'updated_at'>): Promise<RoutineItem> {
-    if (isMockEnabled) {
-      const cached = localStorage.getItem(KEYS.ROUTINE_ITEMS) || '[]';
-      const all: RoutineItem[] = JSON.parse(cached);
-      const newItem: RoutineItem = {
-        ...item,
-        id: 'item-' + Math.random().toString(36).substr(2, 9),
-        is_completed: false,
-        completed_activity_id: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      localStorage.setItem(KEYS.ROUTINE_ITEMS, JSON.stringify([...all, newItem]));
-      
-      const types = await this.getActivityTypes();
-      newItem.activity_type = types.find(t => t.id === newItem.activity_type_id);
-      return newItem;
-    }
-
-    const { data, error } = await supabase!
-      .from('routine_items')
-      .insert(item)
-      .select('*, activity_types(*)')
+      .insert({ ...routine, user_id: userId })
+      .select()
       .single();
 
-    if (error) throw error;
-    return {
-      ...data,
-      activity_type: data.activity_types
-    };
+    if (errR) throw errR;
+
+    const routineId = newR.id;
+    if (days && days.length > 0) {
+      const daysPayload = days.map(d => ({ ...d, routine_id: routineId }));
+      const { data: newDays, error: errD } = await supabase!
+        .from('fitness_routine_days')
+        .insert(daysPayload)
+        .select();
+      if (errD) throw errD;
+      newR.days = newDays || [];
+    } else {
+      // Seed 7 days
+      const weekdays = [1, 2, 3, 4, 5, 6, 0];
+      const daysPayload = weekdays.map(dow => ({
+        routine_id: routineId,
+        day_of_week: dow,
+        workout_type: dow === 0 || dow === 3 ? 'Rest Day' : 'Strength Training',
+        body_part: dow === 1 ? 'Chest + Push' : dow === 2 ? 'Back + Pull' : dow === 4 ? 'Shoulders' : dow === 5 ? 'Legs' : dow === 6 ? 'Flexibility' : null,
+        is_rest_day: dow === 0 || dow === 3,
+        warmup_type: dow === 0 || dow === 3 ? 'none' : 'common',
+        stretching_type: dow === 0 || dow === 3 ? 'none' : 'common'
+      }));
+      const { data: newDays, error: errD } = await supabase!
+        .from('fitness_routine_days')
+        .insert(daysPayload)
+        .select();
+      if (errD) throw errD;
+      newR.days = newDays || [];
+    }
+
+    return newR;
   },
 
-  async updateRoutineItem(_userId: string, itemId: string, fields: Partial<RoutineItem>): Promise<RoutineItem> {
+  async updateFitnessRoutine(userId: string, routineId: string, fields: Partial<FitnessRoutine>): Promise<FitnessRoutine> {
     if (isMockEnabled) {
-      const cached = localStorage.getItem(KEYS.ROUTINE_ITEMS) || '[]';
-      const all: RoutineItem[] = JSON.parse(cached);
-      const index = all.findIndex(i => i.id === itemId);
-      if (index === -1) throw new Error('Routine item not found');
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINES) || '[]';
+      const all: FitnessRoutine[] = JSON.parse(cached);
+      const index = all.findIndex(r => r.id === routineId && r.user_id === userId);
+      if (index === -1) throw new Error('Routine not found');
+
+      // If activating this routine, archive all other routines
+      if (fields.status === 'active') {
+        all.forEach((r, i) => {
+          if (r.user_id === userId && r.id !== routineId && r.status === 'active') {
+            all[i].status = 'archived';
+            all[i].updated_at = new Date().toISOString();
+          }
+        });
+      }
 
       const updated = {
         ...all[index],
@@ -3291,396 +3406,565 @@ export const dbService = {
         updated_at: new Date().toISOString()
       };
       all[index] = updated;
-      localStorage.setItem(KEYS.ROUTINE_ITEMS, JSON.stringify(all));
-
-      const types = await this.getActivityTypes();
-      updated.activity_type = types.find(t => t.id === updated.activity_type_id);
+      localStorage.setItem(KEYS.FITNESS_ROUTINES, JSON.stringify(all));
       return updated;
     }
 
-    const { activity_type, ...dbFields } = fields as any;
-    const { data, error } = await supabase!
-      .from('routine_items')
-      .update(dbFields)
-      .eq('id', itemId)
-      .select('*, activity_types(*)')
-      .single();
-
-    if (error) throw error;
-    return {
-      ...data,
-      activity_type: data.activity_types
-    };
-  },
-
-  async deleteRoutineItem(_userId: string, itemId: string): Promise<void> {
-    if (isMockEnabled) {
-      const cached = localStorage.getItem(KEYS.ROUTINE_ITEMS) || '[]';
-      const all: RoutineItem[] = JSON.parse(cached);
-      const filtered = all.filter(i => i.id !== itemId);
-      localStorage.setItem(KEYS.ROUTINE_ITEMS, JSON.stringify(filtered));
-      return;
-    }
-
-    const { data: item } = await supabase!
-      .from('routine_items')
-      .select('routine_id')
-      .eq('id', itemId)
-      .single();
-
-    if (item?.routine_id) {
-      const { error } = await supabase!
-        .from('routine_items')
-        .delete()
-        .eq('id', itemId);
-      if (error) throw error;
-    }
-  },
-
-  // Strength Workout Plans
-  async getStrengthPlans(userId: string): Promise<StrengthPlan[]> {
-    if (isMockEnabled) {
-      initMockDB(userId);
-      const cached = localStorage.getItem(KEYS.STRENGTH_PLANS) || '[]';
-      const plans: StrengthPlan[] = JSON.parse(cached).filter((p: any) => p.user_id === userId);
-      
-      const exercisesCached = localStorage.getItem(KEYS.STRENGTH_PLAN_EXERCISES) || '[]';
-      const exercises: StrengthPlanExercise[] = JSON.parse(exercisesCached);
-
-      return plans.map(p => ({
-        ...p,
-        exercises: exercises.filter(e => e.plan_id === p.id).sort((a, b) => a.sort_order - b.sort_order)
-      }));
+    if (fields.status === 'active') {
+      // Archive other active routines
+      await supabase!
+        .from('fitness_routines')
+        .update({ status: 'archived' })
+        .eq('user_id', userId)
+        .eq('status', 'active');
     }
 
     const { data, error } = await supabase!
-      .from('strength_plans')
-      .select('*, strength_plan_exercises(*)')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true });
-
-    if (error) throw error;
-    return (data || []).map((row: any) => ({
-      ...row,
-      exercises: (row.strength_plan_exercises || []).sort((a: any, b: any) => a.sort_order - b.sort_order)
-    }));
-  },
-
-  async createStrengthPlan(userId: string, planName: string, description: string, exercises: Omit<StrengthPlanExercise, 'id' | 'plan_id' | 'created_at' | 'updated_at'>[]): Promise<StrengthPlan> {
-    if (isMockEnabled) {
-      const cached = localStorage.getItem(KEYS.STRENGTH_PLANS) || '[]';
-      const plansList: StrengthPlan[] = JSON.parse(cached);
-      const newPlan: StrengthPlan = {
-        id: 'plan-str-' + Math.random().toString(36).substr(2, 9),
-        user_id: userId,
-        name: planName,
-        description,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      
-      const exercisesCached = localStorage.getItem(KEYS.STRENGTH_PLAN_EXERCISES) || '[]';
-      const exercisesList: StrengthPlanExercise[] = JSON.parse(exercisesCached);
-      const newExercises: StrengthPlanExercise[] = exercises.map((exe, idx) => ({
-        ...exe,
-        id: 'exe-' + Math.random().toString(36).substr(2, 9),
-        plan_id: newPlan.id,
-        sort_order: idx,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }));
-
-      localStorage.setItem(KEYS.STRENGTH_PLANS, JSON.stringify([...plansList, newPlan]));
-      localStorage.setItem(KEYS.STRENGTH_PLAN_EXERCISES, JSON.stringify([...exercisesList, ...newExercises]));
-      
-      newPlan.exercises = newExercises;
-      return newPlan;
-    }
-
-    const { data: plan, error: errP } = await supabase!
-      .from('strength_plans')
-      .insert({ user_id: userId, name: planName, description })
-      .select()
-      .single();
-
-    if (errP) throw errP;
-
-    const payload = exercises.map((exe, idx) => ({
-      ...exe,
-      plan_id: plan.id,
-      sort_order: idx
-    }));
-
-    const { data: exes, error: errE } = await supabase!
-      .from('strength_plan_exercises')
-      .insert(payload)
-      .select();
-
-    if (errE) throw errE;
-    plan.exercises = exes;
-    return plan;
-  },
-
-  async updateStrengthPlan(userId: string, planId: string, planName: string, description: string, exercises: Omit<StrengthPlanExercise, 'id' | 'plan_id' | 'created_at' | 'updated_at'>[]): Promise<StrengthPlan> {
-    if (isMockEnabled) {
-      const cached = localStorage.getItem(KEYS.STRENGTH_PLANS) || '[]';
-      const plansList: StrengthPlan[] = JSON.parse(cached);
-      const planIdx = plansList.findIndex(p => p.id === planId && p.user_id === userId);
-      if (planIdx === -1) throw new Error('Plan not found');
-
-      plansList[planIdx] = {
-        ...plansList[planIdx],
-        name: planName,
-        description,
-        updated_at: new Date().toISOString()
-      };
-
-      // Filter out existing exercises for this plan
-      const exercisesCached = localStorage.getItem(KEYS.STRENGTH_PLAN_EXERCISES) || '[]';
-      const otherExercises = JSON.parse(exercisesCached).filter((e: any) => e.plan_id !== planId);
-
-      const newExercises: StrengthPlanExercise[] = exercises.map((exe, idx) => ({
-        ...exe,
-        id: 'exe-' + Math.random().toString(36).substr(2, 9),
-        plan_id: planId,
-        sort_order: idx,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }));
-
-      localStorage.setItem(KEYS.STRENGTH_PLANS, JSON.stringify(plansList));
-      localStorage.setItem(KEYS.STRENGTH_PLAN_EXERCISES, JSON.stringify([...otherExercises, ...newExercises]));
-      
-      const updatedPlan = plansList[planIdx];
-      updatedPlan.exercises = newExercises;
-      return updatedPlan;
-    }
-
-    // Supabase update plan header
-    const { data: plan, error: errP } = await supabase!
-      .from('strength_plans')
-      .update({ name: planName, description, updated_at: new Date().toISOString() })
-      .eq('id', planId)
+      .from('fitness_routines')
+      .update(fields)
+      .eq('id', routineId)
       .eq('user_id', userId)
       .select()
       .single();
 
-    if (errP) throw errP;
-
-    // Delete existing exercises
-    const { error: errD } = await supabase!
-      .from('strength_plan_exercises')
-      .delete()
-      .eq('plan_id', planId);
-
-    if (errD) throw errD;
-
-    // Insert new exercises
-    const payload = exercises.map((exe, idx) => ({
-      ...exe,
-      plan_id: planId,
-      sort_order: idx
-    }));
-
-    const { data: exes, error: errE } = await supabase!
-      .from('strength_plan_exercises')
-      .insert(payload)
-      .select();
-
-    if (errE) throw errE;
-    plan.exercises = exes;
-    return plan;
+    if (error) throw error;
+    return data;
   },
 
-  async deleteStrengthPlan(userId: string, planId: string): Promise<void> {
+  async deleteFitnessRoutine(userId: string, routineId: string): Promise<void> {
     if (isMockEnabled) {
-      const cached = localStorage.getItem(KEYS.STRENGTH_PLANS) || '[]';
-      const filtered = JSON.parse(cached).filter((p: any) => !(p.id === planId && p.user_id === userId));
-      localStorage.setItem(KEYS.STRENGTH_PLANS, JSON.stringify(filtered));
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINES) || '[]';
+      const all: FitnessRoutine[] = JSON.parse(cached);
+      const filtered = all.filter(r => !(r.id === routineId && r.user_id === userId));
+      localStorage.setItem(KEYS.FITNESS_ROUTINES, JSON.stringify(filtered));
 
-      const exes = localStorage.getItem(KEYS.STRENGTH_PLAN_EXERCISES) || '[]';
-      localStorage.setItem(KEYS.STRENGTH_PLAN_EXERCISES, JSON.stringify(JSON.parse(exes).filter((e: any) => e.plan_id !== planId)));
+      // Delete days and exercises cascade
+      const daysCached = localStorage.getItem(KEYS.FITNESS_ROUTINE_DAYS) || '[]';
+      const days: FitnessRoutineDay[] = JSON.parse(daysCached);
+      const routineDays = days.filter(d => d.routine_id === routineId);
+      const routineDayIds = new Set(routineDays.map(d => d.id));
+
+      localStorage.setItem(KEYS.FITNESS_ROUTINE_DAYS, JSON.stringify(days.filter(d => d.routine_id !== routineId)));
+
+      const exesCached = localStorage.getItem(KEYS.FITNESS_ROUTINE_EXERCISES) || '[]';
+      const exes: FitnessRoutineExercise[] = JSON.parse(exesCached);
+      localStorage.setItem(KEYS.FITNESS_ROUTINE_EXERCISES, JSON.stringify(exes.filter(e => !routineDayIds.has(e.routine_day_id))));
       return;
     }
 
     const { error } = await supabase!
-      .from('strength_plans')
+      .from('fitness_routines')
       .delete()
-      .eq('id', planId)
+      .eq('id', routineId)
       .eq('user_id', userId);
+
     if (error) throw error;
   },
 
-  // Strength Sessions Logging
-  async getStrengthSessions(userId: string): Promise<StrengthSession[]> {
+  async getFitnessRoutineDays(routineId: string): Promise<FitnessRoutineDay[]> {
+    if (isMockEnabled) {
+      const daysCached = localStorage.getItem(KEYS.FITNESS_ROUTINE_DAYS) || '[]';
+      const days: FitnessRoutineDay[] = JSON.parse(daysCached).filter((d: any) => d.routine_id === routineId);
+
+      const exercisesCached = localStorage.getItem(KEYS.FITNESS_ROUTINE_EXERCISES) || '[]';
+      const exercises: FitnessRoutineExercise[] = JSON.parse(exercisesCached);
+
+      return days.map(d => ({
+        ...d,
+        exercises: exercises.filter(e => e.routine_day_id === d.id).sort((a, b) => a.order_index - b.order_index)
+      })).sort((a, b) => {
+        const valA = a.day_of_week === 0 ? 7 : a.day_of_week;
+        const valB = b.day_of_week === 0 ? 7 : b.day_of_week;
+        return valA - valB;
+      });
+    }
+
+    const { data: daysData, error: errD } = await supabase!
+      .from('fitness_routine_days')
+      .select('*')
+      .eq('routine_id', routineId);
+
+    if (errD) throw errD;
+
+    const days: FitnessRoutineDay[] = daysData || [];
+    for (const d of days) {
+      const { data: exes, error: errE } = await supabase!
+        .from('fitness_routine_exercises')
+        .select('*')
+        .eq('routine_day_id', d.id)
+        .order('order_index', { ascending: true });
+      if (errE) throw errE;
+      d.exercises = exes || [];
+    }
+
+    return days.sort((a, b) => {
+      const valA = a.day_of_week === 0 ? 7 : a.day_of_week;
+      const valB = b.day_of_week === 0 ? 7 : b.day_of_week;
+      return valA - valB;
+    });
+  },
+
+  async updateFitnessRoutineDay(_userId: string, dayId: string, fields: Partial<FitnessRoutineDay>): Promise<FitnessRoutineDay> {
+    if (isMockEnabled) {
+      const daysCached = localStorage.getItem(KEYS.FITNESS_ROUTINE_DAYS) || '[]';
+      const days: FitnessRoutineDay[] = JSON.parse(daysCached);
+      const index = days.findIndex(d => d.id === dayId);
+      if (index === -1) throw new Error('Routine day not found');
+
+      const updated = {
+        ...days[index],
+        ...fields,
+        updated_at: new Date().toISOString()
+      };
+      days[index] = updated;
+      localStorage.setItem(KEYS.FITNESS_ROUTINE_DAYS, JSON.stringify(days));
+      return updated;
+    }
+
+    const { exercises, ...dbFields } = fields as any;
+    const { data, error } = await supabase!
+      .from('fitness_routine_days')
+      .update(dbFields)
+      .eq('id', dayId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async getFitnessRoutineExercises(dayId: string): Promise<FitnessRoutineExercise[]> {
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINE_EXERCISES) || '[]';
+      const all: FitnessRoutineExercise[] = JSON.parse(cached);
+      return all.filter(e => e.routine_day_id === dayId).sort((a, b) => a.order_index - b.order_index);
+    }
+
+    const { data, error } = await supabase!
+      .from('fitness_routine_exercises')
+      .select('*')
+      .eq('routine_day_id', dayId)
+      .order('order_index', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async createFitnessRoutineExercise(
+    _userId: string,
+    exercise: Omit<FitnessRoutineExercise, 'id' | 'created_at' | 'updated_at'>
+  ): Promise<FitnessRoutineExercise> {
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINE_EXERCISES) || '[]';
+      const all: FitnessRoutineExercise[] = JSON.parse(cached);
+
+      const newExe: FitnessRoutineExercise = {
+        ...exercise,
+        id: 'exe-' + Math.random().toString(36).substr(2, 9),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      all.push(newExe);
+      localStorage.setItem(KEYS.FITNESS_ROUTINE_EXERCISES, JSON.stringify(all));
+      return newExe;
+    }
+
+    const { data, error } = await supabase!
+      .from('fitness_routine_exercises')
+      .insert(exercise)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async updateFitnessRoutineExercise(
+    _userId: string,
+    exerciseId: string,
+    fields: Partial<FitnessRoutineExercise>
+  ): Promise<FitnessRoutineExercise> {
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINE_EXERCISES) || '[]';
+      const all: FitnessRoutineExercise[] = JSON.parse(cached);
+      const index = all.findIndex(e => e.id === exerciseId);
+      if (index === -1) throw new Error('Exercise not found');
+
+      const updated = {
+        ...all[index],
+        ...fields,
+        updated_at: new Date().toISOString()
+      };
+      all[index] = updated;
+      localStorage.setItem(KEYS.FITNESS_ROUTINE_EXERCISES, JSON.stringify(all));
+      return updated;
+    }
+
+    const { data, error } = await supabase!
+      .from('fitness_routine_exercises')
+      .update(fields)
+      .eq('id', exerciseId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteFitnessRoutineExercise(_userId: string, exerciseId: string): Promise<void> {
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINE_EXERCISES) || '[]';
+      const all: FitnessRoutineExercise[] = JSON.parse(cached);
+      const filtered = all.filter(e => e.id !== exerciseId);
+      localStorage.setItem(KEYS.FITNESS_ROUTINE_EXERCISES, JSON.stringify(filtered));
+      return;
+    }
+
+    const { error } = await supabase!
+      .from('fitness_routine_exercises')
+      .delete()
+      .eq('id', exerciseId);
+
+    if (error) throw error;
+  },
+
+  async reorderFitnessRoutineExercises(_userId: string, exercises: { id: string; order_index: number }[]): Promise<void> {
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINE_EXERCISES) || '[]';
+      const all: FitnessRoutineExercise[] = JSON.parse(cached);
+      
+      exercises.forEach(upd => {
+        const index = all.findIndex(e => e.id === upd.id);
+        if (index !== -1) {
+          all[index].order_index = upd.order_index;
+          all[index].updated_at = new Date().toISOString();
+        }
+      });
+
+      localStorage.setItem(KEYS.FITNESS_ROUTINE_EXERCISES, JSON.stringify(all));
+      return;
+    }
+
+    for (const item of exercises) {
+      await supabase!
+        .from('fitness_routine_exercises')
+        .update({ order_index: item.order_index })
+        .eq('id', item.id);
+    }
+  },
+
+  async copyFitnessRoutine(
+    userId: string,
+    sourceRoutineId: string,
+    newName: string,
+    startDate: string,
+    endDate: string
+  ): Promise<FitnessRoutine> {
+    // 1. Load source routine details
+    const sourceRoutine = await this.getFitnessRoutine(userId, sourceRoutineId);
+    
+    // 2. Create the new routine header
+    const newRoutine = await this.createFitnessRoutine(userId, {
+      name: newName,
+      description: sourceRoutine.description,
+      start_date: startDate,
+      end_date: endDate,
+      status: 'draft',
+      source_routine_id: sourceRoutineId,
+      user_id: userId
+    }, []);
+
+    // 3. Duplicate day settings and their exercises
+    const sourceDays = sourceRoutine.days || [];
+    const newDays = await this.getFitnessRoutineDays(newRoutine.id);
+
+    for (const sourceDay of sourceDays) {
+      // Find the corresponding seeded day in the new routine
+      const targetDay = newDays.find(nd => nd.day_of_week === sourceDay.day_of_week);
+      if (targetDay) {
+        // Copy day configuration
+        await this.updateFitnessRoutineDay(userId, targetDay.id, {
+          workout_type: sourceDay.workout_type,
+          body_part: sourceDay.body_part,
+          is_rest_day: sourceDay.is_rest_day,
+          warmup_type: sourceDay.warmup_type,
+          warmup_notes: sourceDay.warmup_notes,
+          stretching_type: sourceDay.stretching_type,
+          stretching_notes: sourceDay.stretching_notes,
+          notes: sourceDay.notes
+        });
+
+        // Copy exercises
+        const exercises = sourceDay.exercises || [];
+        for (const exe of exercises) {
+          await this.createFitnessRoutineExercise(userId, {
+            routine_day_id: targetDay.id,
+            exercise_name: exe.exercise_name,
+            exercise_id: exe.exercise_id,
+            order_index: exe.order_index,
+            sets: exe.sets,
+            reps_min: exe.reps_min,
+            reps_max: exe.reps_max,
+            weight: exe.weight,
+            duration_seconds: exe.duration_seconds,
+            rest_seconds: exe.rest_seconds,
+            notes: exe.notes
+          });
+        }
+      }
+    }
+
+    return this.getFitnessRoutine(userId, newRoutine.id);
+  },
+
+  async createFitnessWorkoutSession(
+    userId: string,
+    session: Omit<FitnessWorkoutSession, 'id' | 'created_at' | 'updated_at'>,
+    sets: Omit<FitnessWorkoutSet, 'id' | 'workout_session_id'>[]
+  ): Promise<FitnessWorkoutSession> {
+    // 1. Automatically create a fitness activity in fitness_activities to increment the user streak
+    const types = await this.getActivityTypes();
+    const typeId = types.find(t => t.slug === 'strength_training')?.id || '';
+    
+    let routineName = 'Strength Workout';
+    if (session.routine_id) {
+      try {
+        const r = await this.getFitnessRoutine(userId, session.routine_id);
+        routineName = r.name;
+      } catch (err) {}
+    }
+
+    const duration = Math.round((new Date(session.completed_at).getTime() - new Date(session.started_at).getTime()) / 60000);
+
+    await this.createFitnessActivity({
+      user_id: userId,
+      activity_type_id: typeId,
+      started_at: session.started_at,
+      ended_at: session.completed_at,
+      duration_minutes: duration || 45,
+      distance: null,
+      calories: null, // calorie tracking disabled
+      avg_heart_rate: null, // heart rate tracking disabled
+      max_heart_rate: null,
+      steps: null, // steps tracking disabled
+      intensity: 'medium',
+      notes: `Completed Workout: ${session.notes || routineName}`,
+      photos: []
+    });
+
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_WORKOUT_SESSIONS) || '[]';
+      const all: FitnessWorkoutSession[] = JSON.parse(cached);
+      
+      const newSession: FitnessWorkoutSession = {
+        ...session,
+        id: 'session-str-' + Math.random().toString(36).substr(2, 9),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      all.push(newSession);
+      localStorage.setItem(KEYS.FITNESS_WORKOUT_SESSIONS, JSON.stringify(all));
+
+      const setsCached = localStorage.getItem(KEYS.FITNESS_WORKOUT_SETS) || '[]';
+      const allSets: FitnessWorkoutSet[] = JSON.parse(setsCached);
+
+      const newSets: FitnessWorkoutSet[] = sets.map(set => ({
+        ...set,
+        id: 'wset-' + Math.random().toString(36).substr(2, 9),
+        workout_session_id: newSession.id
+      }));
+
+      localStorage.setItem(KEYS.FITNESS_WORKOUT_SETS, JSON.stringify([...allSets, ...newSets]));
+      
+      newSession.sets = newSets;
+      return newSession;
+    }
+
+    const { data: newSession, error: errS } = await supabase!
+      .from('fitness_workout_sessions')
+      .insert({ ...session, user_id: userId })
+      .select()
+      .single();
+
+    if (errS) throw errS;
+
+    const payloadSets = sets.map(s => ({ ...s, workout_session_id: newSession.id }));
+    const { data: newSets, error: errSets } = await supabase!
+      .from('fitness_workout_sets')
+      .insert(payloadSets)
+      .select();
+
+    if (errSets) throw errSets;
+    newSession.sets = newSets || [];
+    return newSession;
+  },
+
+  async getFitnessWorkoutSessions(userId: string): Promise<FitnessWorkoutSession[]> {
     if (isMockEnabled) {
       initMockDB(userId);
-      const cached = localStorage.getItem(KEYS.STRENGTH_SESSIONS) || '[]';
-      const all: StrengthSession[] = JSON.parse(cached).filter((s: any) => s.user_id === userId);
+      const cached = localStorage.getItem(KEYS.FITNESS_WORKOUT_SESSIONS) || '[]';
+      const all: FitnessWorkoutSession[] = JSON.parse(cached).filter((s: any) => s.user_id === userId);
       
-      const setsCached = localStorage.getItem(KEYS.STRENGTH_SESSION_SETS) || '[]';
-      const sets: StrengthSessionSet[] = JSON.parse(setsCached);
+      const setsCached = localStorage.getItem(KEYS.FITNESS_WORKOUT_SETS) || '[]';
+      const sets: FitnessWorkoutSet[] = JSON.parse(setsCached);
 
-      const plans = await this.getStrengthPlans(userId);
-      const planMap = new Map(plans.map(p => [p.id, p.name]));
+      const routines = await this.getFitnessRoutines(userId);
+      const routinesMap = new Map(routines.map(r => [r.id, r.name]));
 
       const hydrated = all.map(session => ({
         ...session,
-        plan_name: planMap.get(session.plan_id) || 'Workout Plan',
-        sets: sets.filter(s => s.session_id === session.id)
+        routine_name: session.routine_id ? routinesMap.get(session.routine_id) : undefined,
+        sets: sets.filter(s => s.workout_session_id === session.id)
       }));
 
       return hydrated.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
     }
 
     const { data, error } = await supabase!
-      .from('strength_sessions')
-      .select('*, strength_session_sets(*), strength_plans(name)')
+      .from('fitness_workout_sessions')
+      .select('*, fitness_workout_sets(*), fitness_routines(name), fitness_routine_days(workout_type)')
       .eq('user_id', userId)
       .order('started_at', { ascending: false });
 
     if (error) throw error;
     return (data || []).map((row: any) => ({
       ...row,
-      plan_name: row.strength_plans?.name || 'Workout Plan',
-      sets: row.strength_session_sets
+      routine_name: row.fitness_routines?.name,
+      day_workout_type: row.fitness_routine_days?.workout_type,
+      sets: row.fitness_workout_sets
     }));
   },
 
-  async createStrengthSession(
-    userId: string, 
-    planId: string, 
-    startedAt: string, 
-    completedAt: string, 
-    notes: string, 
-    sets: Omit<StrengthSessionSet, 'id' | 'session_id' | 'completed_at'>[]
-  ): Promise<StrengthSession> {
-    const plans = await this.getStrengthPlans(userId);
-    const plan = plans.find(p => p.id === planId);
-    const planName = plan?.name || 'Strength Workout';
-
-    const types = await this.getActivityTypes();
-    const typeId = types.find(t => t.slug === 'strength_training')?.id || '';
-
-    const activity = await this.createFitnessActivity({
-      user_id: userId,
-      activity_type_id: typeId,
-      started_at: startedAt,
-      ended_at: completedAt,
-      duration_minutes: Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 60000),
-      distance: null,
-      calories: 300,
-      avg_heart_rate: 110,
-      max_heart_rate: 145,
-      steps: null,
-      intensity: 'medium',
-      notes: `Strength Session: ${planName}. ${notes}`,
-      photos: []
-    });
-
+  async getFitnessWorkoutSession(userId: string, sessionId: string): Promise<FitnessWorkoutSession> {
     if (isMockEnabled) {
-      const cached = localStorage.getItem(KEYS.STRENGTH_SESSIONS) || '[]';
-      const all: StrengthSession[] = JSON.parse(cached);
-      const newSession: StrengthSession = {
-        id: 'session-str-' + Math.random().toString(36).substr(2, 9),
-        user_id: userId,
-        plan_id: planId,
-        started_at: startedAt,
-        completed_at: completedAt,
-        notes: notes || null,
-        created_at: new Date().toISOString()
-      };
-      
-      const setsCached = localStorage.getItem(KEYS.STRENGTH_SESSION_SETS) || '[]';
-      const setsList: StrengthSessionSet[] = JSON.parse(setsCached);
-      const newSets: StrengthSessionSet[] = sets.map(set => ({
-        ...set,
-        id: 'set-' + Math.random().toString(36).substr(2, 9),
-        session_id: newSession.id,
-        completed_at: new Date().toISOString()
-      }));
-
-      localStorage.setItem(KEYS.STRENGTH_SESSIONS, JSON.stringify([...all, newSession]));
-      localStorage.setItem(KEYS.STRENGTH_SESSION_SETS, JSON.stringify([...setsList, ...newSets]));
-      
-      newSession.sets = newSets;
-      newSession.plan_name = planName;
-      return newSession;
+      const all = await this.getFitnessWorkoutSessions(userId);
+      const match = all.find(s => s.id === sessionId);
+      if (!match) throw new Error('Workout session not found');
+      return match;
     }
 
-    const { data: session, error: errS } = await supabase!
-      .from('strength_sessions')
-      .insert({ user_id: userId, plan_id: planId, started_at: startedAt, completed_at: completedAt, notes })
-      .select()
+    const { data, error } = await supabase!
+      .from('fitness_workout_sessions')
+      .select('*, fitness_workout_sets(*), fitness_routines(name), fitness_routine_days(workout_type)')
+      .eq('id', sessionId)
+      .eq('user_id', userId)
       .single();
 
-    if (errS) throw errS;
-
-    const payloadSets = sets.map(set => ({
-      session_id: session.id,
-      ...set
-    }));
-
-    const { data: sessionSets, error: errSets } = await supabase!
-      .from('strength_session_sets')
-      .insert(payloadSets)
-      .select();
-
-    if (errSets) throw errSets;
-    session.sets = sessionSets;
-    session.plan_name = planName;
-
-    try {
-      const currentMonday = new Date();
-      currentMonday.setDate(currentMonday.getDate() + (currentMonday.getDay() === 0 ? -6 : 1 - currentMonday.getDay()));
-      const mondayStr = currentMonday.toISOString().split('T')[0];
-      const routine = await this.getOrCreateWeeklyRoutine(userId, mondayStr);
-      const todayDayOfWeek = new Date().getDay();
-      const matchItem = routine.items?.find(i => i.day_of_week === todayDayOfWeek && i.activity_type?.slug === 'strength_training' && !i.is_completed);
-      if (matchItem) {
-        await this.updateRoutineItem(userId, matchItem.id, { is_completed: true, completed_activity_id: activity.id });
-      }
-    } catch (e) {
-      console.warn('Failed to auto check weekly routine item', e);
-    }
-
-    return session;
+    if (error) throw error;
+    return {
+      ...data,
+      routine_name: data.fitness_routines?.name,
+      day_workout_type: data.fitness_routine_days?.workout_type,
+      sets: data.fitness_workout_sets
+    };
   },
 
-  async getStrengthExerciseHistory(userId: string, exerciseName: string): Promise<StrengthSessionSet[]> {
+  async deleteFitnessWorkoutSession(userId: string, sessionId: string): Promise<void> {
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_WORKOUT_SESSIONS) || '[]';
+      const all: FitnessWorkoutSession[] = JSON.parse(cached);
+      const filtered = all.filter(s => !(s.id === sessionId && s.user_id === userId));
+      localStorage.setItem(KEYS.FITNESS_WORKOUT_SESSIONS, JSON.stringify(filtered));
+
+      const setsCached = localStorage.getItem(KEYS.FITNESS_WORKOUT_SETS) || '[]';
+      const sets: FitnessWorkoutSet[] = JSON.parse(setsCached);
+      localStorage.setItem(KEYS.FITNESS_WORKOUT_SETS, JSON.stringify(sets.filter(s => s.workout_session_id !== sessionId)));
+      return;
+    }
+
+    const { error } = await supabase!
+      .from('fitness_workout_sessions')
+      .delete()
+      .eq('id', sessionId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+  },
+
+  async getFitnessExerciseHistory(userId: string, exerciseName: string): Promise<FitnessWorkoutSet[]> {
     if (isMockEnabled) {
       initMockDB(userId);
-      const setsCached = localStorage.getItem(KEYS.STRENGTH_SESSION_SETS) || '[]';
-      const sets: StrengthSessionSet[] = JSON.parse(setsCached);
+      const setsCached = localStorage.getItem(KEYS.FITNESS_WORKOUT_SETS) || '[]';
+      const sets: FitnessWorkoutSet[] = JSON.parse(setsCached);
 
-      const sessionsCached = localStorage.getItem(KEYS.STRENGTH_SESSIONS) || '[]';
-      const sessions: StrengthSession[] = JSON.parse(sessionsCached).filter((s: any) => s.user_id === userId);
+      const sessionsCached = localStorage.getItem(KEYS.FITNESS_WORKOUT_SESSIONS) || '[]';
+      const sessions: FitnessWorkoutSession[] = JSON.parse(sessionsCached).filter((s: any) => s.user_id === userId);
       const sessionIds = new Set(sessions.map(s => s.id));
 
-      return sets
-        .filter(s => s.exercise_name.toLowerCase() === exerciseName.toLowerCase() && sessionIds.has(s.session_id))
-        .sort((a, b) => new Date(a.completed_at).getTime() - new Date(b.completed_at).getTime());
+      const filteredSets = sets
+        .filter(s => s.exercise_name.toLowerCase() === exerciseName.toLowerCase() && sessionIds.has(s.workout_session_id))
+        .map(s => {
+          const session = sessions.find(sn => sn.id === s.workout_session_id);
+          return {
+            ...s,
+            completed_at: session?.completed_at || new Date().toISOString()
+          };
+        });
+
+      return (filteredSets as any[]).sort((a, b) => new Date(a.completed_at).getTime() - new Date(b.completed_at).getTime());
     }
 
     const sessionsQuery = await supabase!
-      .from('strength_sessions')
+      .from('fitness_workout_sessions')
       .select('id')
       .eq('user_id', userId);
 
     const sessionIds = (sessionsQuery.data || []).map(s => s.id);
-
     if (sessionIds.length === 0) return [];
 
     const { data, error } = await supabase!
-      .from('strength_session_sets')
-      .select('*')
-      .in('session_id', sessionIds)
-      .eq('exercise_name', exerciseName)
-      .order('completed_at', { ascending: true });
+      .from('fitness_workout_sets')
+      .select('*, fitness_workout_sessions(completed_at)')
+      .in('workout_session_id', sessionIds)
+      .eq('exercise_name', exerciseName);
+
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      ...row,
+      completed_at: row.fitness_workout_sessions?.completed_at
+    })).sort((a: any, b: any) => new Date(a.completed_at).getTime() - new Date(b.completed_at).getTime());
+  },
+
+  async getRoutineNotifications(userId: string): Promise<FitnessRoutineNotification[]> {
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINE_NOTIFICATIONS) || '[]';
+      return JSON.parse(cached);
+    }
+    
+    // Select notifications where routine belongs to the user
+    const { data, error } = await supabase!
+      .from('fitness_routine_notifications')
+      .select('*, fitness_routines(user_id)')
+      .eq('fitness_routines.user_id', userId);
 
     if (error) throw error;
     return data || [];
+  },
+
+  async createRoutineNotification(notification: Omit<FitnessRoutineNotification, 'id' | 'created_at'>): Promise<FitnessRoutineNotification> {
+    if (isMockEnabled) {
+      const cached = localStorage.getItem(KEYS.FITNESS_ROUTINE_NOTIFICATIONS) || '[]';
+      const all: FitnessRoutineNotification[] = JSON.parse(cached);
+      const newN: FitnessRoutineNotification = {
+        ...notification,
+        id: 'notif-' + Math.random().toString(36).substr(2, 9),
+        created_at: new Date().toISOString()
+      };
+      all.push(newN);
+      localStorage.setItem(KEYS.FITNESS_ROUTINE_NOTIFICATIONS, JSON.stringify(all));
+      return newN;
+    }
+
+    const { data, error } = await supabase!
+      .from('fitness_routine_notifications')
+      .insert(notification)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   },
 
   // Body Measurements CRUD
@@ -4645,5 +4929,108 @@ export const dbService = {
     }
 
     console.log('[Life-OS] Seeding finished successfully.');
+  },
+
+  // Get full context for AI (Jarvis)
+  // Get full context for AI (Jarvis)
+  async getUserContext(userId: string) {
+    const [
+      profile,
+      tasksPersonal,
+      tasksWork,
+      fitnessStreak,
+      activeRoutine,
+      workoutSessions,
+      streaks,
+      financeAccounts,
+      financeBudgets,
+      financeTransactions
+    ] = await Promise.all([
+      this.getProfile(userId),
+      this.getTasks(userId, 'personal'),
+      this.getTasks(userId, 'work'),
+      this.getFitnessStreak(userId),
+      this.getFitnessRoutines(userId).then(rs => rs.find(r => r.status === 'active')),
+      this.getFitnessWorkoutSessions(userId),
+      this.getStreaks(userId),
+      this.getFinanceAccounts(userId).catch(() => []),
+      this.getFinanceBudgets(userId).catch(() => []),
+      this.getFinanceTransactions(userId).catch(() => [])
+    ]);
+
+    // Format tasks for AI using Kolkata timezone
+    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+      .toISOString().split('T')[0];
+    const allTasks = [...tasksPersonal, ...tasksWork];
+
+    const taskSummary = allTasks.map(t => ({
+      id: t.id,
+      title: t.title,
+      workspace: t.workspace,
+      is_completed: t.is_completed,
+      priority: t.priority,
+      due: t.due_at,
+      is_today: t.is_in_today || (t.due_at && t.due_at.startsWith(today))
+    }));
+
+    const pendingToday = taskSummary.filter(t => t.is_today && !t.is_completed);
+    const completedToday = taskSummary.filter(t => t.is_today && t.is_completed);
+    const upcoming = taskSummary.filter(t => !t.is_today && !t.is_completed).slice(0, 3);
+
+    // Format Fitness for AI
+    let todayWorkoutInfo = "No workout planned today (Rest Day).";
+    if (activeRoutine) {
+      const days = await this.getFitnessRoutineDays(activeRoutine.id);
+      const localDOW = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).getDay();
+      const dayPlan = days.find(d => d.day_of_week === localDOW);
+      if (dayPlan && !dayPlan.is_rest_day) {
+        todayWorkoutInfo = `Today's Workout: ${dayPlan.workout_type} (${dayPlan.body_part}). Exercises: ${dayPlan.exercises?.map(e => e.exercise_name).join(', ')}`;
+      }
+    }
+
+    // Format Finance for AI
+    const totalBalance = financeAccounts.reduce((sum, acc) => sum + (acc.current_balance || 0), 0);
+    const budgetSummary = financeBudgets.map(b => ({
+      name: b.name,
+      limit: b.amount,
+      category: b.category_name || 'General'
+    }));
+    const recentTransactions = financeTransactions.slice(0, 5).map(t => ({
+      description: t.description || t.merchant || 'Transaction',
+      amount: t.amount,
+      type: t.type,
+      date: t.transaction_date.split('T')[0]
+    }));
+
+    return {
+      user: {
+        name: profile.display_name,
+        time: new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
+      },
+      streaks: {
+        learning: streaks.current,
+        fitness: fitnessStreak.current
+      },
+      tasks: {
+        pending_today: pendingToday,
+        completed_today: completedToday,
+        upcoming: upcoming,
+        all_summary: taskSummary.slice(0, 10)
+      },
+      finance: {
+        total_balance: totalBalance,
+        budgets: budgetSummary,
+        recent_transactions: recentTransactions
+      },
+      fitness: {
+        active_routine: activeRoutine?.name || "None",
+        today_plan: todayWorkoutInfo,
+        recent_sessions: workoutSessions.slice(0, 3).map(s => ({
+          date: s.completed_at,
+          status: s.status,
+          notes: s.notes
+        }))
+      }
+    };
   }
 };

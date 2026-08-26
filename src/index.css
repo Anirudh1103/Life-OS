@@ -132,6 +132,15 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
+@keyframes gradientSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-gradient-spin {
+  animation: gradientSpin 6s linear infinite;
+}
+
 /* Reduced Motion overrides */
 @media (prefers-reduced-motion: reduce) {
   * {

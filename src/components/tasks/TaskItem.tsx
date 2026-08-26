@@ -156,7 +156,7 @@ export const TaskItem: React.FC<TaskItemProps> = ({
 
         {/* Tags, workspace, priority row */}
         <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${task.workspace === 'work' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/15' : 'bg-amber-500/10 text-amber-400 border border-amber-500/15'}`}>
+          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${task.workspace === 'work' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/15' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15'}`}>
             {task.workspace === 'work' ? '💼 Work' : '🏠 Personal'}
           </span>
           
