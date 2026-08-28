@@ -292,8 +292,8 @@ private fun AdvancedSettings(onBack: () -> Unit) {
                 enableJarvis = it
                 JarvisPrefs.setListenEnabled(context, it)
                 // Trigger service update
-                val intent = Intent(context, com.example.lifeos.jarvis.service.JarvisWakeWordService::class.java).apply {
-                    action = if (it) com.example.lifeos.jarvis.service.JarvisWakeWordService.ACTION_START else com.example.lifeos.jarvis.service.JarvisWakeWordService.ACTION_STOP
+                val intent = Intent(context, JarvisWakeWordService::class.java).apply {
+                    action = if (it) JarvisWakeWordService.ACTION_START else JarvisWakeWordService.ACTION_STOP
                 }
                 if (it && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
             }

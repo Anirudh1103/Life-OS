@@ -368,7 +368,7 @@ fun JarvisMessageItem(message: ChatMessage, accentCyan: Color, accentViolet: Col
                             // Premium Action Button: Play
                             Surface(
                                 onClick = { 
-                                    JarvisController.processQuery("", message.content, isVoiceQuery = true)
+                                    JarvisController.speakMessage(message.content)
                                 },
                                 color = AccentViolet.copy(alpha = 0.15f),
                                 shape = RoundedCornerShape(12.dp),
@@ -419,16 +419,20 @@ fun JarvisMarkdownText(text: String, accentCyan: Color) {
 }
 
 fun parseBoldText(text: String): AnnotatedString {
-    val parts = text.split("**")
     return buildAnnotatedString {
-        parts.forEachIndexed { index, part ->
-            if (index % 2 == 1) {
-                withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF2DE1FC))) {
-                    append(part)
-                }
-            } else {
-                append(part)
+        // Render paired Markdown emphasis, then discard any unpaired formatting
+        // markers instead of exposing literal asterisks in the chat bubble.
+        val matcher = Regex("(\\*{1,3})(.+?)\\1").findAll(text)
+        var cursor = 0
+
+        matcher.forEach { match ->
+            append(text.substring(cursor, match.range.first).replace("*", ""))
+            withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFF2DE1FC))) {
+                append(match.groupValues[2])
             }
+            cursor = match.range.last + 1
         }
+
+        append(text.substring(cursor).replace("*", ""))
     }
 }

@@ -3,6 +3,8 @@ package com.example.lifeos.jarvis
 import com.example.lifeos.jarvis.brain.MultiModelBrain
 import com.example.lifeos.jarvis.command.JarvisCommandRouter
 import com.example.lifeos.jarvis.command.CommandResult
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import io.github.jan.supabase.gotrue.auth
 import com.example.lifeos.data.SupabaseProvider
 import android.content.Context
@@ -35,6 +37,9 @@ object JarvisController {
     private var brain: MultiModelBrain? = null
     private var appContext: Context? = null
     private var commandRouter: JarvisCommandRouter? = null
+    private var chatTts: TextToSpeech? = null
+    private var isChatTtsReady = false
+    private var pendingSpeech: String? = null
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(listOf(
         ChatMessage("assistant", "Good day, Sir. I am Jarvis. How can I assist you today?")
@@ -45,6 +50,28 @@ object JarvisController {
         appContext = context.applicationContext
         brain = newBrain
         commandRouter = JarvisCommandRouter(context.applicationContext)
+        chatTts = TextToSpeech(appContext) { status ->
+            isChatTtsReady = status == TextToSpeech.SUCCESS
+            if (isChatTtsReady) {
+                chatTts?.language = Locale.US
+                chatTts?.setPitch(0.88f)
+                chatTts?.setSpeechRate(0.96f)
+                pendingSpeech?.let {
+                    pendingSpeech = null
+                    speakMessage(it)
+                }
+            } else {
+                android.util.Log.e("JARVIS", "Chat TTS initialization failed: $status")
+            }
+        }.apply {
+            setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) = setSpeaking(true)
+                override fun onDone(utteranceId: String?) = setSpeaking(false)
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) = setSpeaking(false)
+                override fun onError(utteranceId: String?, errorCode: Int) = setSpeaking(false)
+            })
+        }
     }
 
     private val _state = MutableStateFlow<JarvisState>(JarvisState.Disabled)
@@ -170,6 +197,37 @@ object JarvisController {
                 _messages.value = _messages.value + ChatMessage("assistant", err)
                 android.util.Log.e("JARVIS", "Error processing query", e)
             }
+        }
+    }
+
+    /**
+     * Replays a visible chat response through Android's system TTS engine.
+     * This intentionally does not depend on the wake-word foreground service:
+     * the chat can be used while always-listening is disabled.
+     */
+    fun speakMessage(message: String) {
+        val speech = message
+            .replace("```", " ")
+            .replace(Regex("(?m)^\\s*[-*+]\\s+"), "")
+            .replace(Regex("(?m)^\\s*\\d+[.)]\\s+"), "")
+            .replace(Regex("(?m)^\\s*[-*]\\s*\\[[ xX]\\]\\s*"), "")
+            .replace(Regex("\\*{1,3}|`|#{1,6}|_"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        if (speech.isBlank()) return
+
+        if (!isChatTtsReady || chatTts == null) {
+            pendingSpeech = speech
+            android.util.Log.w("JARVIS", "Chat TTS is not ready; speech was queued.")
+            return
+        }
+
+        chatTts?.stop()
+        val result = chatTts?.speak(speech, TextToSpeech.QUEUE_FLUSH, null, "jarvis_chat_replay")
+        if (result != TextToSpeech.SUCCESS) {
+            setSpeaking(false)
+            android.util.Log.e("JARVIS", "Chat TTS request failed: $result")
         }
     }
 
