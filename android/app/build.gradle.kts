@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
@@ -7,12 +9,26 @@ plugins {
 android {
     namespace = "com.example.lifeos"
     compileSdk = 36
+
+    val localProperties = Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { localProperties.load(it) }
+    }
+
     defaultConfig {
         applicationId = "com.example.lifeos"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField("String", "GEMINI_API_KEY", "\"${localProperties.getProperty("GEMINI_API_KEY") ?: ""}\"")
+        buildConfigField("String", "GROQ_API_KEY", "\"${localProperties.getProperty("GROQ_API_KEY") ?: ""}\"")
+        buildConfigField("String", "OPENROUTER_API_KEY", "\"${localProperties.getProperty("OPENROUTER_API_KEY") ?: ""}\"")
+        buildConfigField("String", "SUPABASE_URL", "\"${localProperties.getProperty("SUPABASE_URL") ?: ""}\"")
+        buildConfigField("String", "SUPABASE_KEY", "\"${localProperties.getProperty("SUPABASE_KEY") ?: ""}\"")
+        buildConfigField("String", "ELEVENLABS_API_KEY", "\"${localProperties.getProperty("ELEVENLABS_API_KEY") ?: ""}\"")
     }
 
     buildTypes {
@@ -36,6 +52,13 @@ android {
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
       }
+      jniLibs {
+        keepDebugSymbols += listOf("**/*.so")
+      }
+    }
+
+    androidResources {
+        noCompress += "onnx"
     }
 }
 
@@ -62,7 +85,8 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
   implementation("androidx.compose.material:material-icons-core")
-  
+  implementation("androidx.compose.material:material-icons-extended")
+
   // Tooling
   debugImplementation(libs.androidx.compose.ui.tooling)
   // Instrumented tests
@@ -87,6 +111,26 @@ dependencies {
   // Splash Screen API
   implementation("androidx.core:core-splashscreen:1.0.1")
 
-  // Vosk Offline Speech Recognition SDK
-  implementation("com.alphacephei:vosk-android:0.3.75")
+  // On-device keyword spotting + speaker embeddings (sherpa-onnx)
+  implementation(files("libs/sherpa-onnx.aar"))
+  implementation("androidx.security:security-crypto:1.0.0")
+  // Native SVG renderer for the canonical LifeOS/JARVIS brand assets.
+  implementation("com.caverock:androidsvg:1.4")
+
+  // Supabase
+  implementation(libs.supabasePostgrest)
+  implementation(libs.supabaseGotrue)
+  implementation(libs.supabaseRealtime)
+  implementation(libs.supabaseStorage)
+
+  // Ktor (Required for Supabase & Gemini)
+  implementation(libs.ktorClientCore)
+  implementation(libs.ktorClientOkhttp)
+  implementation(libs.ktorClientContentNegotiation)
+  implementation(libs.ktorClientLogging)
+  implementation(libs.ktorClientAuth)
+  implementation(libs.ktorSerializationKotlinxJson)
+
+  // Google AI (Gemini)
+  implementation(libs.googleAiGenerativeai)
 }

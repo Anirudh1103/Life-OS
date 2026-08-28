@@ -3,19 +3,15 @@ package com.example.lifeos.ui.main
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import com.example.lifeos.alarm.AlarmController
+import java.util.Calendar
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.webkit.WebChromeClient
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,10 +27,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -42,68 +34,33 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavKey
 import com.example.lifeos.jarvis.JarvisController
 import com.example.lifeos.jarvis.JarvisState
+import com.example.lifeos.jarvis.debugLabel
 import com.example.lifeos.jarvis.DetectionLog
 import com.example.lifeos.jarvis.service.JarvisWakeWordService
-import com.example.lifeos.jarvis.wakeword.WakeWord
-import kotlinx.coroutines.flow.collectLatest
+import com.example.lifeos.ui.dashboard.DashboardScreen
+import com.example.lifeos.ui.utils.rememberWindowSizeClass
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     onItemClick: (NavKey) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val sharedPrefs = remember { context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE) }
-
-    // Read Vite URL state from SharedPreferences
-    var savedUrl by remember { 
-        mutableStateOf(sharedPrefs.getString("life_os_url", "http://10.0.2.2:5173") ?: "http://10.0.2.2:5173") 
-    }
-    var inputUrl by remember { mutableStateOf(savedUrl) }
-
     val jarvisState by JarvisController.state.collectAsStateWithLifecycle()
     val detectionsCount by JarvisController.detectionsCount.collectAsStateWithLifecycle()
     val detectionLogs by JarvisController.detectionLogs.collectAsStateWithLifecycle()
     val loadedPhrases by JarvisController.loadedPhrases.collectAsStateWithLifecycle()
+    val lastSpeakerScore by JarvisController.lastSpeakerScore.collectAsStateWithLifecycle()
+    val audioPipelineStatus by JarvisController.audioPipelineStatus.collectAsStateWithLifecycle()
+    val windowSize = rememberWindowSizeClass()
 
     var showDiagnosticsOverlay by remember { mutableStateOf(false) }
     var showPermissionRationale by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) }
-
-    val webViewInstance = remember { mutableStateOf<WebView?>(null) }
-
-    // Inject background voice query events to WebView JS when received
-    LaunchedEffect(Unit) {
-        com.example.lifeos.VoiceQueryManager.queryFlow.collectLatest { query ->
-            if (query != null) {
-                Log.d("JARVIS", "Dispatching JS CustomEvent jarvis_voice_query to WebView: $query")
-                val escapedQuery = query.replace("'", "\\'")
-                webViewInstance.value?.evaluateJavascript(
-                    "window.dispatchEvent(new CustomEvent('jarvis_voice_query', { detail: { text: '$escapedQuery' } }));",
-                    null
-                )
-                com.example.lifeos.VoiceQueryManager.queryFlow.value = null // Reset
-            }
-        }
-    }
-
-    // Inject wake word spotted event to WebView JS when detected
-    LaunchedEffect(jarvisState) {
-        if (jarvisState is JarvisState.Detected) {
-            Log.d("JARVIS", "Dispatching JS CustomEvent jarvis_wake_word_detected to WebView")
-            webViewInstance.value?.evaluateJavascript(
-                "window.dispatchEvent(new CustomEvent('jarvis_wake_word_detected'));",
-                null
-            )
-        }
-    }
 
     // Required Permissions list
     val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -118,6 +75,7 @@ fun MainScreen(
         val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] == true
         if (recordAudioGranted) {
             showPermissionRationale = false
+            com.example.lifeos.jarvis.prefs.JarvisPrefs.setListenEnabled(context, true)
             startJarvisForeground(context)
         } else {
             showPermissionRationale = true
@@ -130,6 +88,7 @@ fun MainScreen(
         }
 
         if (allGranted) {
+            com.example.lifeos.jarvis.prefs.JarvisPrefs.setListenEnabled(context, true)
             startJarvisForeground(context)
         } else {
             permissionLauncher.launch(requiredPermissions)
@@ -137,42 +96,23 @@ fun MainScreen(
     }
 
     fun disableJarvis() {
+        com.example.lifeos.jarvis.prefs.JarvisPrefs.setListenEnabled(context, false)
         stopJarvisForeground(context)
     }
 
-    // Premium Color Palette
+    // Colors
     val darkBackground = Color(0xFF0C0A1C)
-    val cardBackground = Color(0xFF13112E)
     val borderLight = Color(0xFF221E4E)
     val accentViolet = Color(0xFF8A5DF2)
     val accentCyan = Color(0xFF2DE1FC)
     val accentGreen = Color(0xFF00FFC6)
     val accentRed = Color(0xFFFF4E70)
+    val cardBackground = Color(0xFF13112E)
 
     Box(modifier = Modifier.fillMaxSize().background(darkBackground)) {
         
-        // Fullscreen Web application container
-        AndroidView(
-            factory = { ctx ->
-                WebView(ctx).apply {
-                    webViewClient = WebViewClient()
-                    webChromeClient = WebChromeClient()
-                    setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
-                    setBackgroundColor(0xFF0C0A1C.toInt())
-                    settings.apply {
-                        javaScriptEnabled = true
-                        domStorageEnabled = true
-                        databaseEnabled = true
-                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                        loadWithOverviewMode = true
-                        useWideViewPort = true
-                    }
-                    loadUrl(savedUrl)
-                    webViewInstance.value = this
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+        // Native Content
+        DashboardScreen(onNavigate = onItemClick, windowSize = windowSize, modifier = Modifier.fillMaxSize())
 
         // Floating Toggle Gear/Assistant Button (Bottom Left)
         Box(
@@ -186,7 +126,7 @@ fun MainScreen(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = if (showDiagnosticsOverlay) Icons.Default.Close else Icons.Default.Build,
+                imageVector = if (showDiagnosticsOverlay) Icons.Default.Close else Icons.Default.Terminal,
                 contentDescription = "Diagnostics Toggle",
                 tint = Color.White,
                 modifier = Modifier.size(20.dp)
@@ -231,85 +171,6 @@ fun MainScreen(
                             accentRed = accentRed,
                             accentViolet = accentViolet
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Status Description
-                    Text(
-                        text = getStatusText(jarvisState),
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = getStatusSubtext(jarvisState),
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Collapsible Server Settings Panel
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showSettings = !showSettings }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (showSettings) Icons.Default.KeyboardArrowUp else Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = Color.White.copy(alpha = 0.5f),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Vite Server Configuration",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    if (showSettings) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = inputUrl,
-                                onValueChange = { inputUrl = it },
-                                singleLine = true,
-                                label = { Text("Server URL", fontSize = 10.sp, color = Color.White.copy(alpha = 0.5f)) },
-                                modifier = Modifier.weight(1f),
-                                colors = TextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
-                                    focusedContainerColor = cardBackground,
-                                    unfocusedContainerColor = cardBackground,
-                                    focusedIndicatorColor = accentCyan,
-                                    unfocusedIndicatorColor = borderLight
-                                )
-                            )
-                            Button(
-                                onClick = {
-                                    sharedPrefs.edit().putString("life_os_url", inputUrl.trim()).apply()
-                                    savedUrl = inputUrl.trim()
-                                    webViewInstance.value?.loadUrl(savedUrl)
-                                    showSettings = false
-                                    showDiagnosticsOverlay = false
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = accentViolet),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                            ) {
-                                Text("SAVE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -364,7 +225,7 @@ fun MainScreen(
                     if (showPermissionRationale) {
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Microphone permission is required. Enable in Android settings.",
+                            text = "Microphone permission is required.",
                             color = accentRed,
                             fontSize = 10.sp
                         )
@@ -378,6 +239,8 @@ fun MainScreen(
                         detectionsCount = detectionsCount,
                         detectionLogs = detectionLogs,
                         loadedPhrases = loadedPhrases,
+                        lastSpeakerScore = lastSpeakerScore,
+                        audioPipelineStatus = audioPipelineStatus,
                         borderLight = borderLight,
                         cardBackground = cardBackground,
                         accentCyan = accentCyan,
@@ -407,7 +270,7 @@ fun MainScreen(
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        text = "DOWNLOADING OFFLINE VOICE MODEL",
+                        text = "LOADING INTELLIGENCE...",
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.ExtraBold,
@@ -415,19 +278,10 @@ fun MainScreen(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "$progress% complete",
+                        text = "$progress%",
                         color = accentCyan,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Black
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Downloading English voice recognition package (~40 MB) for 100% private, on-device hotword spotting. Do not close the application.",
-                        color = Color.White.copy(alpha = 0.5f),
-                        fontSize = 10.sp,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 16.sp,
-                        modifier = Modifier.padding(horizontal = 40.dp)
                     )
                 }
             }
@@ -446,18 +300,26 @@ fun StatusBadge(
     val color = when (state) {
         JarvisState.Disabled -> Color.Gray
         JarvisState.Starting -> accentViolet
-        JarvisState.Listening -> accentGreen
+        JarvisState.ListeningForWakeWord -> accentGreen
+        is JarvisState.WakeWordDetected -> accentCyan
+        JarvisState.VerifyingSpeaker -> accentViolet
+        JarvisState.ListeningForCommand -> accentGreen
+        JarvisState.Processing -> accentViolet
+        JarvisState.Responding -> accentCyan
         is JarvisState.DownloadingModel -> accentViolet
-        is JarvisState.Detected -> accentCyan
         is JarvisState.Error -> accentRed
     }
 
     val label = when (state) {
         JarvisState.Disabled -> "OFFLINE"
         JarvisState.Starting -> "STARTING"
-        JarvisState.Listening -> "ACTIVE"
+        JarvisState.ListeningForWakeWord -> "ACTIVE"
+        is JarvisState.WakeWordDetected -> "WAKE"
+        JarvisState.VerifyingSpeaker -> "VERIFY"
+        JarvisState.ListeningForCommand -> "COMMAND"
+        JarvisState.Processing -> "PROCESS"
+        JarvisState.Responding -> "SPEAK"
         is JarvisState.DownloadingModel -> "UPDATING"
-        is JarvisState.Detected -> "SPOTTED"
         is JarvisState.Error -> "ERROR"
     }
 
@@ -490,12 +352,19 @@ fun DiagnosticPanel(
     detectionsCount: Int,
     detectionLogs: List<DetectionLog>,
     loadedPhrases: List<String>,
+    lastSpeakerScore: Float? = null,
+    audioPipelineStatus: String = "unknown",
     borderLight: Color,
     cardBackground: Color,
     accentCyan: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onStart: (() -> Unit)? = null,
+    onStop: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val accentViolet = Color(0xFF8A5DF2)
+    val accentRed = Color(0xFFFF4E70)
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = cardBackground),
@@ -507,13 +376,19 @@ fun DiagnosticPanel(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            Text(
-                text = "DIAGNOSTICS PANEL",
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 1.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "SYSTEM LOGS",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.sp
+                )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -522,53 +397,23 @@ fun DiagnosticPanel(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                DiagItem(label = "Engine", value = "Vosk offline")
+                DiagItem(label = "Engine", value = "Sherpa KWS")
                 DiagItem(
                     label = "Microphone",
-                    value = if (state is JarvisState.Listening || state is JarvisState.Detected) "Active" else "Offline"
+                    value = if (state is JarvisState.Disabled || state is JarvisState.Error) "Offline" else "Active"
                 )
-                DiagItem(label = "DetectionsCount", value = "$detectionsCount")
+                DiagItem(label = "Hits", value = "$detectionsCount")
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Phrases Info Box
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(10.dp))
-                    .border(1.dp, borderLight.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                    .padding(8.dp)
-            ) {
-                Column {
-                    Text(
-                        text = "Supported Phrases:",
-                        color = Color.White.copy(alpha = 0.5f),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = if (loadedPhrases.isNotEmpty()) loadedPhrases.joinToString("  |  ") else "built-in JARVIS",
-                        color = accentCyan,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "SPOTTED HISTORY LOGS",
-                color = Color.White.copy(alpha = 0.6f),
+                "DEV  ${state.debugLabel()}  |  audio=$audioPipelineStatus  |  speaker=${lastSpeakerScore?.let { String.format("%.2f", it) } ?: "—"}",
+                color = Color.White.copy(alpha = 0.45f),
                 fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
+                fontFamily = FontFamily.Monospace
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // List of spotted logs
             LazyColumn(
@@ -578,7 +423,7 @@ fun DiagnosticPanel(
                 if (detectionLogs.isEmpty()) {
                     item {
                         Text(
-                            text = "No wake words detected yet.",
+                            text = "Awaiting command, Sir.",
                             color = Color.White.copy(alpha = 0.3f),
                             fontSize = 11.sp,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
@@ -623,29 +468,41 @@ fun DiagnosticPanel(
 
             // Samsung/Battery Saver optimization guides footer button
             Spacer(modifier = Modifier.height(10.dp))
-            Button(
-                onClick = {
-                    val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                    context.startActivity(intent)
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.05f)),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(vertical = 6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "Battery Config",
-                    tint = Color.White.copy(alpha = 0.6f),
-                    modifier = Modifier.size(12.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Configure Battery Optimization (Disable for Galaxy Tab S9 Ultra)",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        val calendar = Calendar.getInstance().apply {
+                            add(Calendar.SECOND, 10)
+                        }
+                        AlarmController.setAlarm(context, calendar.timeInMillis)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = accentCyan.copy(alpha = 0.2f)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(12.dp), tint = accentCyan)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("ALARM TEST", color = accentCyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = {
+                        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        context.startActivity(intent)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.05f)),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "BATTERY OPT.",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
@@ -666,28 +523,6 @@ fun DiagItem(label: String, value: String) {
             fontSize = 12.sp,
             fontWeight = FontWeight.ExtraBold
         )
-    }
-}
-
-private fun getStatusText(state: JarvisState): String {
-    return when (state) {
-        JarvisState.Disabled -> "● Jarvis is Offline"
-        JarvisState.Starting -> "Initializing Jarvis Engine..."
-        JarvisState.Listening -> "Listening locally for wake words..."
-        is JarvisState.DownloadingModel -> "Downloading voice model..."
-        is JarvisState.Detected -> "✦ Wake Word Spotted: ${state.wakeWord}!"
-        is JarvisState.Error -> "System Alert"
-    }
-}
-
-private fun getStatusSubtext(state: JarvisState): String {
-    return when (state) {
-        JarvisState.Disabled -> "Enable background listener to trigger voice commands."
-        JarvisState.Starting -> "Verifying microphone permission and loading local acoustic voice models."
-        JarvisState.Listening -> "Say \"JARVIS\" or \"Hey JARVIS\" clearly. Voice processing is 100% local."
-        is JarvisState.DownloadingModel -> "Fetching optimized 40 MB speech models to allow offline recognition."
-        is JarvisState.Detected -> "Preparing to listen for your command, Sir."
-        is JarvisState.Error -> state.message
     }
 }
 

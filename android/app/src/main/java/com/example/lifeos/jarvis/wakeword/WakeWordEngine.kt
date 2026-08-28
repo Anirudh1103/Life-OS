@@ -1,14 +1,8 @@
 package com.example.lifeos.jarvis.wakeword
 
-import kotlinx.coroutines.flow.Flow
-
 interface WakeWordEngine {
-
-    suspend fun start()
-
-    suspend fun stop()
-
+    fun initialize()
+    fun process(samples: FloatArray, sampleRate: Int): WakeWordHit?
+    fun reset()
     fun release()
-
-    val detectedWakeWord: Flow<WakeWord>
 }

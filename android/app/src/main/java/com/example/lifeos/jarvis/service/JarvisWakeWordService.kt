@@ -15,8 +15,15 @@ import androidx.core.app.NotificationCompat
 import com.example.lifeos.MainActivity
 import com.example.lifeos.jarvis.JarvisController
 import com.example.lifeos.jarvis.JarvisState
-import com.example.lifeos.jarvis.wakeword.VoskWakeWordEngine
-import com.example.lifeos.jarvis.wakeword.WakeWord
+import com.example.lifeos.jarvis.audio.JarvisAudioManager
+import com.example.lifeos.jarvis.audio.toFloatPcm
+import com.example.lifeos.jarvis.command.DeferredJarvisCommandProcessor
+import com.example.lifeos.jarvis.command.JarvisCommandListener
+import com.example.lifeos.jarvis.logging.JarvisLog
+import com.example.lifeos.jarvis.prefs.JarvisPrefs
+import com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier
+import com.example.lifeos.jarvis.wakeword.SherpaWakeWordEngine
+import com.example.lifeos.jarvis.wakeword.WakeWordConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,6 +31,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 import android.graphics.PixelFormat
 import android.os.Bundle
 import android.os.Handler
@@ -55,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.*
@@ -63,13 +72,34 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
-class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import java.util.Locale
+import io.ktor.client.*
+import io.ktor.client.engine.okhttp.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import java.io.File
+import java.io.FileOutputStream
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import com.example.lifeos.BuildConfig
+
+class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner, TextToSpeech.OnInitListener {
+
+    private var tts: TextToSpeech? = null
+    private var isTtsReady = false
+    private var mediaPlayer: MediaPlayer? = null
+    
+    private val httpClient = HttpClient(OkHttp)
+    private val JARVIS_VOICE_ID = "pNInz6obpgdq514hcHCY"
 
     private val lifecycleRegistry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle = lifecycleRegistry
 
-    private val viewModelStore = ViewModelStore()
-    override val viewModelStore: ViewModelStore = viewModelStore
+    private val _viewModelStore = ViewModelStore()
+    override val viewModelStore: ViewModelStore = _viewModelStore
 
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     override val savedStateRegistry: SavedStateRegistry = savedStateRegistryController.savedStateRegistry
@@ -81,23 +111,43 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
 
-    private var wakeWordEngine: VoskWakeWordEngine? = null
+    private var wakeWordEngine: SherpaWakeWordEngine? = null
+    private var audioManager: JarvisAudioManager? = null
+    private var commandListener: JarvisCommandListener? = null
     private var recordingJob: Job? = null
     private var isServiceRunning = false
+    private var listeningPaused = false
 
     companion object {
         const val NOTIFICATION_ID = 1001
         const val CHANNEL_ID = "jarvis_wake_word_channel"
         const val ACTION_START = "com.example.lifeos.jarvis.START"
         const val ACTION_STOP = "com.example.lifeos.jarvis.STOP"
+        const val ACTION_REFRESH_SETTINGS = "com.example.lifeos.jarvis.REFRESH_SETTINGS"
+        const val ACTION_PAUSE_LISTENING = "com.example.lifeos.jarvis.PAUSE_LISTENING"
+        const val ACTION_RESUME_LISTENING = "com.example.lifeos.jarvis.RESUME_LISTENING"
     }
 
     override fun onCreate() {
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        
+        tts = TextToSpeech(this, this)
+        
         createNotificationChannel()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+
+        // Global response collector - lives for the entire service lifecycle
+        serviceScope.launch(Dispatchers.Main) {
+            JarvisController.lastResponse.collectLatest { response ->
+                if (response != null && JarvisController.shouldSpeakResponse.value) {
+                    Log.d("JARVIS", "Global collector: Received response to speak: ${response.take(20)}...")
+                    showVoicePill()
+                    speak(response)
+                }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -110,10 +160,33 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
             return START_NOT_STICKY
         }
 
+        if (action == ACTION_REFRESH_SETTINGS) {
+            refreshSettings()
+            return START_STICKY
+        }
+
+        if (action == ACTION_PAUSE_LISTENING) {
+            listeningPaused = true
+            stopAudioPipeline()
+            JarvisController.updateState(JarvisState.Disabled)
+            JarvisController.setAudioPipelineStatus("paused")
+            return START_STICKY
+        }
+
+        if (action == ACTION_RESUME_LISTENING) {
+            listeningPaused = false
+            startForegroundWithNotification()
+            isServiceRunning = true
+            startListening()
+            return START_STICKY
+        }
+
         // Start Foreground Notification first (Required within 5 seconds of Service start)
         startForegroundWithNotification()
 
-        if (action == ACTION_START) {
+        val shouldListen = action == ACTION_START ||
+            (action.isNullOrEmpty() && JarvisPrefs.isListenEnabled(this))
+        if (shouldListen) {
             isServiceRunning = true
             JarvisController.updateState(JarvisState.Starting)
             startListening()
@@ -122,64 +195,293 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
         return START_STICKY
     }
 
-    private fun startListening() {
-        recordingJob?.cancel()
-        recordingJob = serviceScope.launch {
-            try {
-                // Initialize Vosk Engine
-                val engine = VoskWakeWordEngine(applicationContext)
-                wakeWordEngine = engine
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            tts?.language = Locale.US
+            
+            val voices = tts?.voices
+            Log.d("JARVIS", "Available voices: ${voices?.size}")
+            
+            // Search for premium British Male voices first, explicitly avoiding female voices
+            val preferredVoice = voices?.filter { 
+                val name = it.name.lowercase()
+                !name.contains("female") && !name.contains("girl") && !name.contains("woman") && !name.contains("female")
+            }?.find { 
+                val name = it.name.lowercase()
+                (name.contains("en-gb") && (name.contains("male") || name.contains("danny") || name.contains("oliver") || name.contains("fis"))) ||
+                name.contains("en-us-x-iom") || 
+                name.contains("en-us-x-iol")
+            } ?: voices?.filter { !it.name.lowercase().contains("female") }
+              ?.find { it.name.lowercase().contains("male") }
+              ?: voices?.find { it.locale.language == "en" && it.locale.country == "GB" && it.name.lowercase().contains("fis") }
+              ?: voices?.find { it.locale.language == "en" && it.locale.country == "GB" }
+              ?: voices?.firstOrNull { it.locale.language == "en" }
+            
+            if (preferredVoice != null) {
+                tts?.voice = preferredVoice
+                Log.d("JARVIS", "Selected sophisticated voice: ${preferredVoice.name}")
+            }
 
-                // Register loaded phrases in controller
-                JarvisController.setLoadedPhrases(listOf("JARVIS", "Hey JARVIS"))
+            // JARVIS character recalibration: Deeper and slightly faster for that clinical intelligence feel
+            tts?.setPitch(0.78f) 
+            tts?.setSpeechRate(1.1f) 
 
-                // Listen to detection flow
-                launch(Dispatchers.Main) {
-                    engine.detectedWakeWord.collectLatest { word ->
-                        if (isServiceRunning) {
-                            JarvisController.updateState(JarvisState.Detected(word))
-                            // Update Notification Content
-                            updateNotificationText("✦ Wake Word Detected: $word")
-                            
-                            // Show Overlay Pill
-                            showVoicePill()
-
-                            // Wait for cooldown
-                            delay(4000L)
-                            
-                            // Re-enter listening state
-                            if (isServiceRunning) {
-                                JarvisController.updateState(JarvisState.Listening)
-                                updateNotificationText("Listening for JARVIS...")
-                            }
-                        }
-                    }
+            isTtsReady = true
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    JarvisController.setSpeaking(true)
                 }
 
-                engine.start()
+                override fun onDone(utteranceId: String?) {
+                    JarvisController.setSpeaking(false)
+                }
 
-            } catch (e: SecurityException) {
-                Log.e("JARVIS", "Microphone permission is missing", e)
-                JarvisController.updateState(JarvisState.Error("Microphone permission is required for JARVIS."))
-                stopSelf()
+                override fun onError(utteranceId: String?) {
+                    JarvisController.setSpeaking(false)
+                }
+            })
+        }
+    }
+
+    private fun speak(text: String) {
+        Log.d("JARVIS", "Commanded to speak: ${text.take(50)}...")
+        val apiKey = BuildConfig.ELEVENLABS_API_KEY
+        if (!apiKey.isNullOrBlank() && apiKey != "") {
+            speakWithElevenLabs(text)
+        } else {
+            speakWithSystemTts(text)
+        }
+    }
+
+    private fun speakWithElevenLabs(text: String) {
+        serviceScope.launch {
+            try {
+                JarvisController.setSpeaking(true)
+                val response = httpClient.post("https://api.elevenlabs.io/v1/text-to-speech/$JARVIS_VOICE_ID") {
+                    header("xi-api-key", BuildConfig.ELEVENLABS_API_KEY)
+                    contentType(ContentType.Application.Json)
+                    setBody("""{"text": "$text", "model_id": "eleven_turbo_v2_5"}""")
+                }
+
+                if (response.status == HttpStatusCode.OK) {
+                    val bytes = response.readBytes()
+                    val tempFile = File(cacheDir, "jarvis_voice.mp3")
+                    FileOutputStream(tempFile).use { it.write(bytes) }
+                    
+                    launch(Dispatchers.Main) {
+                        playAudioFile(tempFile)
+                    }
+                } else {
+                    Log.w("JARVIS", "ElevenLabs failed: ${response.status}. Falling back.")
+                    speakWithSystemTts(text)
+                }
             } catch (e: Exception) {
-                Log.e("JARVIS", "Unknown exception during service start", e)
-                JarvisController.updateState(JarvisState.Error(e.message ?: "Failed to start wake-word engine."))
-                stopSelf()
+                Log.e("JARVIS", "ElevenLabs error", e)
+                speakWithSystemTts(text)
             }
         }
     }
 
+    private fun playAudioFile(file: File) {
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        
+        mediaPlayer = MediaPlayer().apply {
+            setDataSource(file.absolutePath)
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) AudioAttributes.USAGE_ASSISTANT else AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            setOnCompletionListener { 
+                JarvisController.setSpeaking(false)
+            }
+            prepare()
+            start()
+        }
+    }
+
+    private fun speakWithSystemTts(text: String) {
+        if (isTtsReady) {
+            Log.d("JARVIS", "Speaking with system TTS: $text")
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis_response")
+        } else {
+            Log.w("JARVIS", "TTS not ready yet.")
+        }
+    }
+
+    private fun startListening() {
+        if (listeningPaused) {
+            JarvisLog.d("JARVIS_LISTENING_PAUSED")
+            return
+        }
+        if (!JarvisPrefs.isListenEnabled(this)) {
+            JarvisLog.d("JARVIS_DEACTIVATED", "listening disabled")
+            JarvisController.updateState(JarvisState.Disabled)
+            JarvisController.setAudioPipelineStatus("disabled")
+            return
+        }
+
+        val verificationRequired = JarvisSpeakerVerifier.isSpeakerVerificationEnabled(this)
+        if (verificationRequired && JarvisSpeakerVerifier.getVoiceProfile(this) == null) {
+            JarvisLog.w("SPEAKER_VERIFICATION_ENABLED_BUT_NO_PROFILE")
+        }
+
+        recordingJob?.cancel()
+        commandListener?.stop()
+        recordingJob = serviceScope.launch {
+            try {
+                JarvisController.updateState(JarvisState.Starting)
+                val engine = wakeWordEngine ?: SherpaWakeWordEngine(applicationContext).also {
+                    it.initialize()
+                    wakeWordEngine = it
+                }
+                if (commandListener == null) {
+                    commandListener = JarvisCommandListener(applicationContext)
+                }
+
+                JarvisController.setLoadedPhrases(listOf(WakeWordConfig.PHRASE))
+
+                startWakeWordCapture(engine)
+            } catch (e: SecurityException) {
+                JarvisLog.e("AUDIO_ERROR", e)
+                JarvisController.updateState(
+                    JarvisState.Error(
+                        "Microphone permission is required.",
+                        JarvisState.ErrorAction.OpenSettings
+                    )
+                )
+            } catch (e: Exception) {
+                JarvisLog.e("AUDIO_ERROR", e)
+                JarvisController.updateState(
+                    JarvisState.Error(
+                        "JARVIS couldn't start listening.",
+                        JarvisState.ErrorAction.Retry
+                    )
+                )
+            }
+        }
+    }
+
+    private fun startWakeWordCapture(engine: SherpaWakeWordEngine) {
+        stopAudioPipeline()
+        val manager = JarvisAudioManager(applicationContext)
+        audioManager = manager
+        manager.start { frame, length ->
+            val state = JarvisController.state.value
+            if (state !is JarvisState.ListeningForWakeWord && state !is JarvisState.Starting) {
+                return@start
+            }
+            if (state is JarvisState.Starting) {
+                JarvisController.updateState(JarvisState.ListeningForWakeWord)
+                JarvisController.setAudioPipelineStatus("listening")
+                updateNotificationText("Listening for Hey Jarvis…")
+            }
+            val hit = engine.process(frame.toFloatPcm(length), WakeWordConfig.SAMPLE_RATE)
+            if (hit != null) {
+                handleWakeWord(manager.snapshotRecent(), hit.confidence)
+            }
+        }
+    }
+
+    private fun handleWakeWord(pcm: ShortArray, confidence: Float?) {
+        serviceScope.launch(Dispatchers.Default) {
+            JarvisLog.d("WAKE_WORD_DETECTED")
+            JarvisController.updateState(JarvisState.WakeWordDetected(confidence))
+            updateNotificationText("Wake word detected")
+
+            val verificationEnabled = JarvisSpeakerVerifier.isSpeakerVerificationEnabled(this@JarvisWakeWordService)
+            if (!verificationEnabled) {
+                JarvisLog.w("SPEAKER_VERIFICATION_SKIPPED")
+                activateJarvis()
+                return@launch
+            }
+
+            val enrolled = JarvisSpeakerVerifier.getVoiceProfile(this@JarvisWakeWordService)
+            if (enrolled == null) {
+                JarvisLog.d("SPEAKER_VERIFICATION_FAILED", "missing profile")
+                activateJarvis() 
+                return@launch
+            }
+
+            JarvisController.updateState(JarvisState.VerifyingSpeaker)
+            JarvisLog.d("SPEAKER_VERIFICATION_STARTED")
+            
+            val score = JarvisSpeakerVerifier.verifySpeaker(pcm, enrolled)
+            JarvisController.setLastSpeakerScore(score)
+            
+            if (score >= JarvisSpeakerVerifier.DEFAULT_THRESHOLD) {
+                JarvisLog.d("SPEAKER_VERIFICATION_SUCCESS")
+                activateJarvis()
+            } else {
+                JarvisLog.d("SPEAKER_VERIFICATION_FAILED", "score=$score")
+                JarvisController.updateState(JarvisState.ListeningForWakeWord)
+                updateNotificationText("Listening for Hey Jarvis…")
+            }
+        }
+    }
+
+    private fun activateJarvis() {
+        JarvisLog.d("JARVIS_ACTIVATED")
+        stopAudioPipeline()
+        JarvisController.updateState(JarvisState.ListeningForCommand)
+        updateNotificationText("JARVIS is listening for a command")
+        serviceScope.launch(Dispatchers.Main) {
+            showVoicePill()
+            speak("Yes, Sir?")
+            commandListener?.start(JarvisPrefs.commandTimeoutMs(this@JarvisWakeWordService)) { transcript ->
+                serviceScope.launch {
+                    if (!transcript.isNullOrBlank()) {
+                        JarvisController.updateState(JarvisState.Processing)
+                        JarvisController.processQuery(transcript, isVoiceQuery = true)
+                        JarvisController.updateState(JarvisState.Responding)
+                    }
+                    delay(1_200)
+                    if (isServiceRunning && JarvisPrefs.isListenEnabled(this@JarvisWakeWordService)) {
+                        wakeWordEngine?.reset()
+                        JarvisController.updateState(JarvisState.ListeningForWakeWord)
+                        val engine = wakeWordEngine ?: return@launch
+                        startWakeWordCapture(engine)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopAudioPipeline() {
+        audioManager?.stop()
+        audioManager = null
+        JarvisController.setAudioPipelineStatus("stopped")
+    }
+
+    private fun refreshSettings() {
+        val isEnabled = JarvisPrefs.isListenEnabled(this)
+        if (isEnabled) {
+            // Force re-initialization of engine to pick up new sensitivity/config
+            wakeWordEngine?.release()
+            wakeWordEngine = null
+            isServiceRunning = true
+            startListening()
+        } else {
+            stopAudioPipeline()
+            isServiceRunning = false
+            JarvisController.updateState(JarvisState.Disabled)
+            JarvisLog.d("JARVIS_DEACTIVATED")
+        }
+    }
+
     private fun stopForegroundService() {
-        Log.d("JARVIS", "Stopping JARVIS Wake Word Service.")
+        JarvisLog.d("JARVIS_DEACTIVATED")
         isServiceRunning = false
         recordingJob?.cancel()
-        serviceScope.cancel()
-
+        commandListener?.stop()
+        commandListener = null
+        stopAudioPipeline()
         wakeWordEngine?.release()
         wakeWordEngine = null
-
         JarvisController.updateState(JarvisState.Disabled)
+        JarvisController.setAudioPipelineStatus("stopped")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -192,6 +494,8 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
 
     override fun onDestroy() {
         super.onDestroy()
+        tts?.stop()
+        tts?.shutdown()
         stopForegroundService()
     }
 
@@ -225,7 +529,11 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
     }
 
     private fun showVoicePill() {
-        if (overlayView != null || !Settings.canDrawOverlays(this)) return
+        if (!Settings.canDrawOverlays(this)) {
+            Log.w("JARVIS", "Cannot show voice pill: Permission 'Display over other apps' is missing.")
+            return
+        }
+        if (overlayView != null) return
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -264,6 +572,7 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
     }
 
     private fun removeVoicePill() {
+        JarvisController.clearResponse()
         overlayView?.let {
             windowManager?.removeView(it)
             overlayView = null
@@ -312,7 +621,9 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
 
 @Composable
 fun VoicePillOverlay(visible: Boolean, onDismiss: () -> Unit) {
-    val context = LocalContext.current
+    val jarvisResponse by JarvisController.lastResponse.collectAsState(initial = null)
+    val isSpeaking by JarvisController.isSpeaking.collectAsState(initial = false)
+
     AnimatedVisibility(
         visible = visible,
         enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -327,66 +638,83 @@ fun VoicePillOverlay(visible: Boolean, onDismiss: () -> Unit) {
             Surface(
                 modifier = Modifier
                     .wrapContentWidth()
-                    .height(56.dp)
+                    .heightIn(min = 56.dp)
                     .shadow(20.dp, RoundedCornerShape(28.dp))
                     .border(BorderStroke(1.dp, Color(0xFF2DE1FC).copy(alpha = 0.3f)), RoundedCornerShape(28.dp)),
                 color = Color(0xFF0C0A1C),
                 shape = RoundedCornerShape(28.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .fillMaxHeight(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Glowing Pulse Node
-                    Box(contentAlignment = Alignment.Center) {
-                        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-                        val scale by infiniteTransition.animateFloat(
-                            initialValue = 0.8f,
-                            targetValue = 1.2f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(1000, easeOf = FastOutSlowInEasing),
-                                repeatMode = RepeatMode.Reverse
-                            ),
-                            label = "scale"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Glowing Pulse Node
+                        Box(contentAlignment = Alignment.Center) {
+                            if (isSpeaking) {
+                                val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                                val scale by infiniteTransition.animateFloat(
+                                    initialValue = 0.8f,
+                                    targetValue = 1.2f,
+                                    animationSpec = infiniteRepeatable(
+                                        animation = tween(1000, easing = FastOutSlowInEasing),
+                                        repeatMode = RepeatMode.Reverse
+                                    ),
+                                    label = "scale"
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .scale(scale)
+                                        .background(Color(0xFF8A5DF2), CircleShape)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .background(Color(0xFF2DE1FC), CircleShape)
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = if (isSpeaking) "JARVIS is speaking..." else "I'm listening, Sir...",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
                         )
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .scale(scale)
-                                .background(Color(0xFF2DE1FC), CircleShape)
-                        )
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        IconButton(
+                            onClick = {
+                                JarvisController.processQuery("who are you")
+                                // Auto dismiss after some time if needed, but for now we keep it visible to show response
+                            },
+                            modifier = Modifier.size(32.dp).background(Color(0xFF8A5DF2).copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Open Jarvis",
+                                tint = Color(0xFF2DE1FC),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
-                    Text(
-                        text = "I'm listening, Sir...",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    IconButton(
-                        onClick = {
-                            val launchIntent = Intent(context, MainActivity::class.java).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                                action = "com.example.lifeos.ACTION_VOICE_QUERY"
-                                putExtra("query", "start")
-                            }
-                            context.startActivity(launchIntent)
-                            onDismiss()
-                        },
-                        modifier = Modifier.size(32.dp).background(Color(0xFF8A5DF2).copy(alpha = 0.2f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "Open Jarvis",
-                            tint = Color(0xFF2DE1FC),
-                            modifier = Modifier.size(16.dp)
+                    if (jarvisResponse != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = jarvisResponse!!,
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.widthIn(max = 300.dp)
                         )
                     }
                 }
