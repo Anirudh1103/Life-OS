@@ -1,5 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <attribution android:tag="jarvis_microphone" android:label="@string/attribution_label" />
 
     <!-- Permissions required for JARVIS Voice Assistant -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -12,6 +13,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".LifeOSApplication"
@@ -40,6 +42,19 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <receiver android:name=".jarvis.reminder.CalendarReminderReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.lifeos.ACTION_PROACTIVE_REMINDER" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".jarvis.service.JarvisBootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
 
         <receiver android:name=".alarm.AlarmReceiver" android:enabled="true" android:exported="false" />
         <service

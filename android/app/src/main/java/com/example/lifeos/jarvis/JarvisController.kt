@@ -41,8 +41,17 @@ object JarvisController {
     private var isChatTtsReady = false
     private var pendingSpeech: String? = null
 
+    private val _activeSpeakingTimestamp = MutableStateFlow<Long?>(null)
+    val activeSpeakingTimestamp: StateFlow<Long?> = _activeSpeakingTimestamp.asStateFlow()
+
+    private val _isPaused = MutableStateFlow(false)
+    val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
+
+    private var speakableSentences: List<String> = emptyList()
+    private var currentSentenceIdx = 0
+
     private val _messages = MutableStateFlow<List<ChatMessage>>(listOf(
-        ChatMessage("assistant", "Good day, Sir. I am Jarvis. How can I assist you today?")
+        ChatMessage("assistant", "Good day, Sir. I am JARVIS. How can I assist you today?")
     ))
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
@@ -54,8 +63,33 @@ object JarvisController {
             isChatTtsReady = status == TextToSpeech.SUCCESS
             if (isChatTtsReady) {
                 chatTts?.language = Locale.US
-                chatTts?.setPitch(0.88f)
-                chatTts?.setSpeechRate(0.96f)
+                chatTts?.setPitch(0.70f)
+                chatTts?.setSpeechRate(1.1f)
+
+                try {
+                    val voices = chatTts?.voices
+                    val preferredVoice = voices?.filter { 
+                        val name = it.name.lowercase(Locale.ROOT)
+                        !name.contains("female") && !name.contains("girl") && !name.contains("woman")
+                    }?.find { 
+                        val name = it.name.lowercase(Locale.ROOT)
+                        (name.contains("en-gb") && (name.contains("male") || name.contains("danny") || name.contains("oliver") || name.contains("fis"))) ||
+                        name.contains("en-us-x-iom") || 
+                        name.contains("en-us-x-iol")
+                    } ?: voices?.filter { !it.name.lowercase(Locale.ROOT).contains("female") }
+                      ?.find { it.name.lowercase(Locale.ROOT).contains("male") }
+                      ?: voices?.find { it.locale.language == "en" && it.locale.country == "GB" && it.name.lowercase(Locale.ROOT).contains("fis") }
+                      ?: voices?.find { it.locale.language == "en" && it.locale.country == "GB" }
+                      ?: voices?.firstOrNull { it.locale.language == "en" }
+
+                    if (preferredVoice != null) {
+                        chatTts?.voice = preferredVoice
+                        android.util.Log.i("JARVIS", "Selected Chat TTS voice: ${preferredVoice.name}")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("JARVIS", "Failed to select preferred TTS voice", e)
+                }
+
                 pendingSpeech?.let {
                     pendingSpeech = null
                     speakMessage(it)
@@ -65,11 +99,27 @@ object JarvisController {
             }
         }.apply {
             setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) = setSpeaking(true)
-                override fun onDone(utteranceId: String?) = setSpeaking(false)
+                override fun onStart(utteranceId: String?) {
+                    setSpeaking(true)
+                }
+                override fun onDone(utteranceId: String?) {
+                    if (_isPaused.value) return
+                    scope.launch(Dispatchers.Main) {
+                        currentSentenceIdx++
+                        speakCurrentSentence()
+                    }
+                }
                 @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String?) = setSpeaking(false)
-                override fun onError(utteranceId: String?, errorCode: Int) = setSpeaking(false)
+                override fun onError(utteranceId: String?) {
+                    scope.launch(Dispatchers.Main) {
+                        stopMessage()
+                    }
+                }
+                override fun onError(utteranceId: String?, errorCode: Int) {
+                    scope.launch(Dispatchers.Main) {
+                        stopMessage()
+                    }
+                }
             })
         }
     }
@@ -137,6 +187,10 @@ object JarvisController {
         }
     }
 
+    fun triggerMorningBriefing() {
+        processQuery("Good morning", isVoiceQuery = true)
+    }
+
     fun processQuery(query: String, customResponse: String? = null, isVoiceQuery: Boolean = false) {
         _shouldSpeakResponse.value = isVoiceQuery
 
@@ -165,12 +219,12 @@ object JarvisController {
 
         // 2. If not deterministic, fall back to AI Brain
         // Immediate UI feedback
-        _lastResponse.value = "Processing, Sir..."
+        _lastResponse.value = "Processing..."
 
         scope.launch {
             val user = SupabaseProvider.client.auth.currentUserOrNull()
             if (user == null) {
-                val err = "Sir, you must be logged in for me to access your neural data."
+                val err = "You must be logged in for me to access your neural data."
                 _lastResponse.value = err
                 _messages.value = _messages.value + ChatMessage("assistant", err)
                 return@launch
@@ -187,17 +241,118 @@ object JarvisController {
                     _messages.value = _messages.value + ChatMessage("assistant", response.speech)
                     handleAction(response.action, user.id)
                 } else {
-                    val err = "My cognitive processors are offline, Sir. Please check that you have configured at least one AI provider (Gemini, Groq, or OpenRouter) in your local.properties file."
+                    val err = "My cognitive processors are offline. Please check that you have configured at least one AI provider (Gemini, Groq, or OpenRouter) in your local.properties file."
                     _lastResponse.value = err
                     _messages.value = _messages.value + ChatMessage("assistant", err)
                 }
             } catch (e: Exception) {
-                val err = "I apologize, Sir. I encountered an error: ${e.message ?: "Unknown error"}. Please verify your API keys are valid."
+                val err = "I apologize. I encountered an error: ${e.message ?: "Unknown error"}. Please verify your API keys are valid."
                 _lastResponse.value = err
                 _messages.value = _messages.value + ChatMessage("assistant", err)
                 android.util.Log.e("JARVIS", "Error processing query", e)
             }
         }
+    }
+
+    fun togglePlayPause(message: ChatMessage) {
+        if (_activeSpeakingTimestamp.value == message.timestamp) {
+            if (_isPaused.value) {
+                resumeMessage()
+            } else if (_isSpeaking.value) {
+                pauseMessage()
+            } else {
+                startSpeakingMessage(message)
+            }
+        } else {
+            startSpeakingMessage(message)
+        }
+    }
+
+    fun startSpeakingMessage(message: ChatMessage) {
+        stopMessage()
+
+        _activeSpeakingTimestamp.value = message.timestamp
+        _isPaused.value = false
+
+        // Clean suggestion chips & commands
+        val cleanLines = message.content.split("\n")
+            .filter { line ->
+                val trimmed = line.trim()
+                if (trimmed.isEmpty()) return@filter false
+                if (trimmed.startsWith("[COMMAND:")) return@filter false
+                val isChip = trimmed.matches(Regex("^\\[([^\\[\\]]+)\\]$")) && 
+                             !trimmed.startsWith("[ ]") && 
+                             !trimmed.startsWith("[x]")
+                !isChip
+            }
+            .joinToString("\n")
+
+        val cleanText = cleanLines
+            .replace("```", " ")
+            .replace(Regex("""\(ID: [a-f0-9-]+\)"""), "") // Robustly remove task IDs
+            .replace(Regex("(?m)^\\s*[-*+]\\s+"), "")
+            .replace(Regex("(?m)^\\s*\\d+[.)]\\s+"), "")
+            .replace(Regex("(?m)^\\s*[-*]\\s*\\[[ xX]\\]\\s*"), "")
+            .replace(Regex("\\*{1,3}|`|#{1,6}|_"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        if (cleanText.isBlank()) {
+            stopMessage()
+            return
+        }
+
+        speakableSentences = cleanText.split(Regex("(?<=[.?!])\\s+")).filter { it.isNotBlank() }
+        currentSentenceIdx = 0
+
+        if (speakableSentences.isEmpty()) {
+            stopMessage()
+            return
+        }
+
+        if (!isChatTtsReady || chatTts == null) {
+            android.util.Log.w("JARVIS", "Chat TTS is not ready.")
+            stopMessage()
+            return
+        }
+
+        setSpeaking(true)
+        speakCurrentSentence()
+    }
+
+    private fun speakCurrentSentence() {
+        val tts = chatTts ?: return
+        if (currentSentenceIdx >= speakableSentences.size) {
+            stopMessage()
+            return
+        }
+
+        val sentence = speakableSentences[currentSentenceIdx]
+        val params = android.os.Bundle().apply {
+            putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "jarvis_sentence_$currentSentenceIdx")
+        }
+        tts.speak(sentence, TextToSpeech.QUEUE_FLUSH, params, "jarvis_sentence_$currentSentenceIdx")
+    }
+
+    fun pauseMessage() {
+        _isPaused.value = true
+        chatTts?.stop()
+        setSpeaking(false)
+    }
+
+    fun resumeMessage() {
+        _isPaused.value = false
+        setSpeaking(true)
+        speakCurrentSentence()
+    }
+
+    fun stopMessage() {
+        chatTts?.stop()
+        _isPaused.value = false
+        setSpeaking(false)
+        _activeSpeakingTimestamp.value = null
+        speakableSentences = emptyList()
+        currentSentenceIdx = 0
     }
 
     /**
@@ -206,29 +361,8 @@ object JarvisController {
      * the chat can be used while always-listening is disabled.
      */
     fun speakMessage(message: String) {
-        val speech = message
-            .replace("```", " ")
-            .replace(Regex("(?m)^\\s*[-*+]\\s+"), "")
-            .replace(Regex("(?m)^\\s*\\d+[.)]\\s+"), "")
-            .replace(Regex("(?m)^\\s*[-*]\\s*\\[[ xX]\\]\\s*"), "")
-            .replace(Regex("\\*{1,3}|`|#{1,6}|_"), "")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
-        if (speech.isBlank()) return
-
-        if (!isChatTtsReady || chatTts == null) {
-            pendingSpeech = speech
-            android.util.Log.w("JARVIS", "Chat TTS is not ready; speech was queued.")
-            return
-        }
-
-        chatTts?.stop()
-        val result = chatTts?.speak(speech, TextToSpeech.QUEUE_FLUSH, null, "jarvis_chat_replay")
-        if (result != TextToSpeech.SUCCESS) {
-            setSpeaking(false)
-            android.util.Log.e("JARVIS", "Chat TTS request failed: $result")
-        }
+        val dummyMsg = ChatMessage("assistant", message, timestamp = 0L)
+        startSpeakingMessage(dummyMsg)
     }
 
     private fun handleAction(action: com.example.lifeos.jarvis.brain.JarvisAction?, userId: String) {

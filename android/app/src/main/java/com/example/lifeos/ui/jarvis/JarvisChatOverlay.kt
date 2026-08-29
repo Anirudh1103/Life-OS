@@ -42,6 +42,8 @@ import com.example.lifeos.jarvis.ChatMessage
 import com.example.lifeos.theme.*
 import com.example.lifeos.ui.components.JarvisArcReactor
 import java.util.Calendar
+import androidx.compose.ui.res.painterResource
+import com.example.lifeos.R
 
 @Composable
 fun JarvisChatConsole(
@@ -229,7 +231,7 @@ fun TabletLayout(
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                 JarvisArcReactor(size = 120.dp, state = if (isSpeaking) "listening" else "idle")
                 Spacer(modifier = Modifier.height(24.dp))
-                Text("Good day, Sir", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text("Systems Operational", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
                 Text("Cognitive processors online.", color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(24.dp))
                 suggestionPrompts.forEach { SuggestionChip(it) { JarvisController.processQuery(it) }; Spacer(Modifier.height(8.dp)) }
@@ -254,7 +256,7 @@ fun JarvisEmptyState(accentCyan: Color) {
             Icon(Icons.Default.AutoAwesome, null, tint = accentCyan, modifier = Modifier.size(48.dp))
             Spacer(modifier = Modifier.height(16.dp))
             Text("JARVIS", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-            Text("Ready for your command, Sir.", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
+            Text("Ready for your command.", color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp)
         }
     }
 }
@@ -315,6 +317,10 @@ fun ChatInputSection(inputText: String, onValueChange: (String) -> Unit, onSend:
 @Composable
 fun JarvisMessageItem(message: ChatMessage, accentCyan: Color, accentViolet: Color) {
     val isAssistant = message.role == "assistant"
+    val activeTimestamp by JarvisController.activeSpeakingTimestamp.collectAsStateWithLifecycle()
+    val isPaused by JarvisController.isPaused.collectAsStateWithLifecycle()
+    val isCurrentSpeaking = activeTimestamp == message.timestamp
+
     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = if (isAssistant) Alignment.Start else Alignment.End) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = if (isAssistant) Arrangement.Start else Arrangement.End, modifier = Modifier.fillMaxWidth()) {
             if (isAssistant) {
@@ -343,7 +349,7 @@ fun JarvisMessageItem(message: ChatMessage, accentCyan: Color, accentViolet: Col
             Box(modifier = Modifier.then(if (backgroundBrush != null) Modifier.background(backgroundBrush) else Modifier).padding(12.dp)) {
                 Column {
                     JarvisMarkdownText(text = message.content, accentCyan = accentCyan)
-                    if (isAssistant && message.content != "Processing, Sir...") {
+                    if (isAssistant && !message.content.startsWith("Processing")) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -365,18 +371,33 @@ fun JarvisMessageItem(message: ChatMessage, accentCyan: Color, accentViolet: Col
                                 }
                             }
 
-                            // Premium Action Button: Play
+                            // Premium Action Button: Play/Pause Toggle
+                            val isCurrentPlaying = isCurrentSpeaking && !isPaused
                             Surface(
                                 onClick = { 
-                                    JarvisController.speakMessage(message.content)
+                                    JarvisController.togglePlayPause(message)
                                 },
-                                color = AccentViolet.copy(alpha = 0.15f),
+                                color = if (isCurrentSpeaking) accentCyan.copy(alpha = 0.15f) else accentViolet.copy(alpha = 0.15f),
                                 shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, AccentViolet.copy(alpha = 0.3f)),
+                                border = BorderStroke(1.dp, if (isCurrentSpeaking) accentCyan.copy(alpha = 0.3f) else accentViolet.copy(alpha = 0.3f)),
                                 modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Outlined.PlayCircle, "Play Voice", tint = AccentViolet, modifier = Modifier.size(18.dp))
+                                    if (isCurrentPlaying) {
+                                        Icon(
+                                            imageVector = Icons.Default.Pause,
+                                            contentDescription = "Pause Voice",
+                                            tint = accentCyan,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Play Voice",
+                                            tint = if (isCurrentSpeaking) accentCyan else accentViolet,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -390,6 +411,15 @@ fun JarvisMessageItem(message: ChatMessage, accentCyan: Color, accentViolet: Col
 @Composable
 fun JarvisMarkdownText(text: String, accentCyan: Color) {
     val lines = text.split("\n")
+        .filter { line ->
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) return@filter false
+            if (trimmed.startsWith("[COMMAND:")) return@filter false
+            val isChip = trimmed.matches(Regex("^\\[([^\\[\\]]+)\\]$")) && 
+                         !trimmed.startsWith("[ ]") && 
+                         !trimmed.startsWith("[x]")
+            !isChip
+        }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         lines.forEach { line ->
             when {
@@ -434,5 +464,145 @@ fun parseBoldText(text: String): AnnotatedString {
         }
 
         append(text.substring(cursor).replace("*", ""))
+    }
+}
+
+@Composable
+fun JarvisSidePanel(
+    onClose: () -> Unit
+) {
+    val messages by JarvisController.messages.collectAsStateWithLifecycle()
+    val isSpeaking by JarvisController.isSpeaking.collectAsStateWithLifecycle()
+    var inputText by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+
+    val darkBackground = Color(0xFF0C0A1C)
+    val cardBackground = Color(0xFF13112E)
+    val accentCyan = Color(0xFF2DE1FC)
+    val accentViolet = Color(0xFF8A5DF2)
+
+    val suggestionPrompts = remember {
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        when {
+            hour < 12 -> listOf("Add a task", "Start focus session", "Log expense", "What's next?")
+            hour < 17 -> listOf("What's my agenda?", "Log workout", "Review tasks")
+            else -> listOf("Daily summary", "What's next?", "Add a task")
+        }
+    }
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .width(420.dp)
+            .fillMaxHeight()
+            .background(darkBackground)
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.05f))
+    ) {
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(cardBackground)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(Color(0xFF00FFC6), CircleShape)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        "Jarvis",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Online",
+                        color = Color.White.copy(alpha = 0.4f),
+                        fontSize = 9.sp
+                    )
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Pin / Alert icon
+                IconButton(onClick = {}, modifier = Modifier.size(24.dp)) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_bell),
+                        contentDescription = "Notifications",
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                // Close button
+                IconButton(onClick = onClose, modifier = Modifier.size(24.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+
+        // Messages Box
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            if (messages.isEmpty()) {
+                JarvisEmptyState(accentCyan)
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
+                ) {
+                    items(messages) { msg ->
+                        JarvisMessageItem(msg, accentCyan, accentViolet)
+                    }
+                }
+            }
+        }
+
+        // Suggestion Chips Carousel
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(suggestionPrompts) { prompt ->
+                SuggestionChip(prompt) {
+                    JarvisController.processQuery(prompt)
+                }
+            }
+        }
+
+        // Input Box
+        ChatInputSection(
+            inputText = inputText,
+            onValueChange = { inputText = it },
+            onSend = {
+                if (inputText.isNotBlank()) {
+                    JarvisController.processQuery(inputText.trim())
+                    inputText = ""
+                }
+            },
+            accentViolet = accentViolet
+        )
     }
 }

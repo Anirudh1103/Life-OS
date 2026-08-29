@@ -20,11 +20,13 @@ class JarvisCommandRouter(private val context: Context) {
         when {
             query.contains("go to home") || query.contains("open home") || query == "home" -> {
                 JarvisNavigationManager.navigateTo(Dashboard)
-                return CommandResult.Success("Navigating to home, Sir.")
+                val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
+                return CommandResult.Success("Navigating to home, $title.")
             }
             query.contains("open tasks") || query.contains("show tasks") -> {
                 JarvisNavigationManager.navigateTo(Tasks)
-                return CommandResult.Success("Opening your task list, Sir.")
+                val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
+                return CommandResult.Success("Opening your task list, $title.")
             }
             query.contains("open fitness") || query.contains("go to fitness") -> {
                 JarvisNavigationManager.navigateTo(Fitness)
@@ -32,7 +34,8 @@ class JarvisCommandRouter(private val context: Context) {
             }
             query.contains("open learning") || query.contains("go to learning") -> {
                 JarvisNavigationManager.navigateTo(Learning)
-                return CommandResult.Success("Accessing your learning modules, Sir.")
+                val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
+                return CommandResult.Success("Accessing your learning modules, $title.")
             }
             query.contains("open finance") || query.contains("show my money") -> {
                 JarvisNavigationManager.navigateTo(Finance)
@@ -48,11 +51,43 @@ class JarvisCommandRouter(private val context: Context) {
             }
             query.contains("go back") || query == "back" -> {
                 JarvisNavigationManager.goBack()
-                return CommandResult.Success("Going back, Sir.")
+                val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
+                return CommandResult.Success("Going back, $title.")
             }
         }
 
-        // 2. External App Commands
+        // 2. Identity & Creator Commands
+        when {
+            query == "who am i" || query.contains("who created you") || query.contains("who built you") || query.contains("who is your creator") -> {
+                return CommandResult.Success(
+                    "**“Anirudh.**\n\n" +
+                    "You are the one who built me.\n\n" +
+                    "The mind behind the machine.\n\n" +
+                    "The engineer who decided that ordinary wasn't good enough.\n\n" +
+                    "You don't simply use technology, **Boss.**\n\n" +
+                    "**You make it work for you.**\n\n" +
+                    "And I am here to make sure your time, your goals, your work, and your ambitions never operate alone.\n\n" +
+                    "**You are the architect.\nI am the system.**\n\n" +
+                    "Now…\n\n" +
+                    "**what shall we accomplish, Boss?”**"
+                )
+            }
+        }
+
+        // 3. Calendar Data Commands
+        when {
+            query.contains("good morning") || query.contains("brief me") || query.contains("today's schedule") -> {
+                // Return Ignored to let MultiModelBrain handle the actual briefing content 
+                // using the expanded intelligence context snapshot we already built.
+                return CommandResult.Ignored
+            }
+            query.contains("meeting") || query.contains("calendar") || query.contains("schedule") -> {
+                val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
+                return CommandResult.Success("I'm accessing your chronological directives now, $title. One moment.")
+            }
+        }
+
+        // 4. External App Commands
         when {
             query.contains("open youtube") -> return launchApp("com.google.android.youtube", "YouTube")
             query.contains("open spotify") -> return launchApp("com.spotify.music", "Spotify")
@@ -68,9 +103,11 @@ class JarvisCommandRouter(private val context: Context) {
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(intent)
-                CommandResult.Success("Opening $label, Sir.")
+                val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
+                CommandResult.Success("Opening $label, $title.")
             } else {
-                CommandResult.Success("Sir, $label does not appear to be installed on this unit.")
+                val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
+                CommandResult.Success("$title, $label does not appear to be installed on this unit.")
             }
         } catch (e: Exception) {
             CommandResult.Success("I encountered an error trying to launch $label.")

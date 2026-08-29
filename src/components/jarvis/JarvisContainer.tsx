@@ -173,7 +173,7 @@ export const JarvisContainer: React.FC = () => {
         setMessages(JSON.parse(historyStr));
       } else {
         setMessages([
-          { role: 'model', content: "Good day, Sir. I am Jarvis, your neural assistant. How can I optimize your workflow or routine today?\n\n[What's on my day?]\n[Check fitness streak]\n[Create a tasks list]" }
+          { role: 'model', content: "Good day, Sir & Boss. I am Jarvis, your neural assistant. How can I optimize your workflow or routine today?\n\n[What's on my day?]\n[Check fitness streak]\n[Create a tasks list]" }
         ]);
       }
     }

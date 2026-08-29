@@ -8,19 +8,19 @@ import android.os.Build
 import android.util.Log
 
 object AlarmController {
-    private const val ALARM_REQUEST_CODE = 2001
 
-    fun setAlarm(context: Context, timeInMillis: Long) {
+    fun setAlarm(context: Context, timeInMillis: Long, id: Int = 2001) {
         val sharedPrefs = context.getSharedPreferences("jarvis_prefs", Context.MODE_PRIVATE)
         val ringtoneUri = sharedPrefs.getString("ringtone_uri", null)
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             putExtra("ringtone_uri", ringtoneUri)
+            putExtra("alarm_id", id)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            ALARM_REQUEST_CODE,
+            id,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -39,24 +39,24 @@ object AlarmController {
                     pendingIntent
                 )
             }
-            Log.d("JARVIS", "Alarm set for $timeInMillis")
+            Log.d("JARVIS", "Alarm $id set for $timeInMillis")
         } catch (e: SecurityException) {
             Log.e("JARVIS", "Failed to set exact alarm", e)
         }
     }
 
-    fun cancelAlarm(context: Context) {
+    fun cancelAlarm(context: Context, id: Int = 2001) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, AlarmReceiver::class.java)
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            ALARM_REQUEST_CODE,
+            id,
             intent,
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         )
         if (pendingIntent != null) {
             alarmManager.cancel(pendingIntent)
-            Log.d("JARVIS", "Alarm cancelled")
+            Log.d("JARVIS", "Alarm $id cancelled")
         }
     }
 }

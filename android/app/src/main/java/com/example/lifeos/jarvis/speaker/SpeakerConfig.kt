@@ -9,6 +9,6 @@ object SpeakerConfig {
     const val MODEL_ASSET = "speaker/campplus_sv_en_voxceleb_16k.onnx"
     const val MODEL_ID = "campplus_sv_en_voxceleb_16k"
     const val CONFIG_VERSION = 1
-    const val SIMILARITY_THRESHOLD = 0.55f
+    const val SIMILARITY_THRESHOLD = 0.45f
     const val NUM_THREADS = 1
 }

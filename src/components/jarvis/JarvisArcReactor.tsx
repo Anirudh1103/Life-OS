@@ -1,5 +1,6 @@
 import React from "react";
 import { motion } from "framer-motion";
+import jarvisOrb from "../../../android/app/src/main/res/raw/jarvis_orb.svg";
 
 interface JarvisArcReactorProps {
   state?: "idle" | "listening" | "thinking";
@@ -45,100 +46,22 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
         className="absolute inset-[-20%] rounded-full bg-cyan-500/20 blur-2xl pointer-events-none"
       />
 
-      {/* SVG Multi-Ring Holographic Core */}
-      <svg
-        viewBox="-10 -10 120 120"
-        className="w-full h-full relative z-10 overflow-visible drop-shadow-[0_0_12px_rgba(56,189,248,0.5)]"
-      >
-        <defs>
-          <linearGradient id="cyanBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#00f2fe" />
-            <stop offset="100%" stopColor="#4facfe" />
-          </linearGradient>
-          <linearGradient id="purpleVioletGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#a855f7" />
-            <stop offset="100%" stopColor="#6366f1" />
-          </linearGradient>
-        </defs>
-
-        {/* Outer Ring: Segmented Tachometer Track (Counter-Clockwise) */}
-        <motion.circle
-          cx="50"
-          cy="50"
-          r="44"
-          fill="none"
-          stroke="url(#cyanBlueGrad)"
-          strokeWidth="2.5"
-          strokeDasharray="18 8 6 8 32 10"
-          strokeLinecap="round"
-          animate={{ rotate: -360 }}
-          transition={{
-            duration: isThinking ? 3 : 16,
-            repeat: Infinity,
-            ease: "linear",
-          }}
-          style={{ transformOrigin: "50px 50px" }}
-        />
-
-        {/* Middle Ring: Fast Holographic Dashes (Clockwise) */}
-        <motion.circle
-          cx="50"
-          cy="50"
-          r="34"
-          fill="none"
-          stroke="url(#purpleVioletGrad)"
-          strokeWidth="2"
-          strokeDasharray="8 6 16 6 4 10"
-          strokeLinecap="round"
-          animate={{ rotate: 360 }}
-          transition={{
-            duration: isThinking ? 2 : 10,
-            repeat: Infinity,
-            ease: "linear",
-          }}
-          style={{ transformOrigin: "50px 50px" }}
-        />
-
-        {/* Inner Arc Stabilizer Segments */}
-        <motion.circle
-          cx="50"
-          cy="50"
-          r="24"
-          fill="none"
-          stroke="#38bdf8"
-          strokeWidth="1.5"
-          strokeDasharray="24 14"
-          strokeOpacity="0.8"
-          animate={{ rotate: -360 }}
-          transition={{
-            duration: isListening ? 1.5 : 8,
-            repeat: Infinity,
-            ease: "linear",
-          }}
-          style={{ transformOrigin: "50px 50px" }}
-        />
-
-        {/* Center Nucleus / Energy Core */}
-        <motion.circle
-          cx="50"
-          cy="50"
-          r="12"
-          fill="#00f2fe"
-          animate={{
-            scale: isListening ? [0.85, 1.25, 0.85] : [0.95, 1.05, 0.95],
-            opacity: [0.85, 1, 0.85],
-          }}
-          transition={{
-            duration: isListening ? 0.6 : 2,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-          style={{ transformOrigin: "50px 50px" }}
-        />
-
-        {/* Center Sparkle Point */}
-        <circle cx="50" cy="50" r="4.5" fill="#ffffff" />
-      </svg>
+      {/* Reuse the native Jarvis asset: neon circle with glowing eyes. */}
+      <motion.img
+        src={jarvisOrb}
+        alt="Jarvis"
+        draggable={false}
+        animate={{
+          scale: isListening ? [0.96, 1.06, 0.96] : isThinking ? [0.98, 1.03, 0.98] : 1,
+          rotate: isThinking ? [0, 2, -2, 0] : 0,
+        }}
+        transition={{
+          duration: isListening ? 0.8 : isThinking ? 1.1 : 0.2,
+          repeat: isListening || isThinking ? Infinity : 0,
+          ease: "easeInOut",
+        }}
+        className="relative z-10 h-full w-full rounded-full object-contain drop-shadow-[0_0_12px_rgba(139,92,246,0.5)]"
+      />
     </div>
   );
 };

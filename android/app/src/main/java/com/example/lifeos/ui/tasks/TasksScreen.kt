@@ -48,8 +48,8 @@ fun TasksScreen(
     var activeTab by remember { mutableStateOf("my_day") } // "my_day", "planned", "all", "completed"
     var isAddingTask by remember { mutableStateOf(false) }
 
-    val darkBackground = Color(0xFF0C0A1C)
-    val cardBackground = Color(0xFF13112E)
+    val darkBackground = MaterialTheme.colorScheme.background
+    val cardBackground = MaterialTheme.colorScheme.surface
     val accentCyan = Color(0xFF2DE1FC)
     val accentViolet = Color(0xFF8A5DF2)
 
@@ -161,11 +161,11 @@ fun TasksListHeader(
     onTabChange: (String) -> Unit,
     accentViolet: Color
 ) {
-    val cardBackground = Color(0xFF13112E)
+    val cardBackground = MaterialTheme.colorScheme.surface
 
     Text(
         "Tasks",
-        color = Color.White,
+        color = MaterialTheme.colorScheme.onBackground,
         fontSize = 24.sp,
         fontWeight = FontWeight.Black
     )
@@ -200,13 +200,13 @@ fun TasksListHeader(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(16.dp))
-                    .background(if (isSelected) Color(0xFF221E4E) else Color.Transparent)
+                    .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent)
                     .clickable { onTabChange(tabId) }
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
                     text = label,
-                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f),
+                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     fontSize = 11.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                 )
@@ -233,7 +233,7 @@ fun WorkspaceTab(
     ) {
         Text(
             text = label,
-            color = if (isSelected) color else Color.White.copy(alpha = 0.5f),
+            color = if (isSelected) color else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold
         )
@@ -246,11 +246,11 @@ fun SectionHeader(title: String, count: Int) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
     ) {
-        Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+        Text(title, color = MaterialTheme.colorScheme.onBackground, fontSize = 14.sp, fontWeight = FontWeight.Black)
         Spacer(modifier = Modifier.width(8.dp))
         Box(
             modifier = Modifier
-                .background(Color(0xFF221E4E), RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                 .padding(horizontal = 8.dp, vertical = 2.dp)
         ) {
             Text("$count", color = Color(0xFF2DE1FC), fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -300,14 +300,14 @@ fun TasksListContent(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             "Your day is clear.",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onBackground,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             "Create your first task and start making progress.",
-                            color = Color.White.copy(alpha = 0.4f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
                             fontSize = 11.sp
                         )
                     }
@@ -416,7 +416,7 @@ fun TaskCardItem(
                 Icon(
                     imageVector = if (task.is_completed) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                     contentDescription = null,
-                    tint = if (task.is_completed) accentViolet else Color.White.copy(alpha = 0.3f),
+                    tint = if (task.is_completed) accentViolet else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -426,7 +426,7 @@ fun TaskCardItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = task.title,
-                    color = if (task.is_completed) Color.White.copy(alpha = 0.4f) else Color.White,
+                    color = if (task.is_completed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurface,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     textDecoration = if (task.is_completed) TextDecoration.LineThrough else TextDecoration.None
@@ -452,7 +452,7 @@ fun TaskCardItem(
                             }
                             Text(
                                 text = formattedDate,
-                                color = Color.White.copy(alpha = 0.4f),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                                 fontSize = 10.sp
                             )
                         }
@@ -460,7 +460,7 @@ fun TaskCardItem(
                         if (totalSubtasks > 0) {
                             Text(
                                 text = "$completedSubtasks/$totalSubtasks subtasks",
-                                color = Color.White.copy(alpha = 0.4f),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                                 fontSize = 10.sp
                             )
                         }
@@ -488,7 +488,7 @@ fun TaskCardItem(
                 Icon(
                     imageVector = if (task.is_important) Icons.Default.Star else Icons.Default.StarBorder,
                     contentDescription = null,
-                    tint = if (task.is_important) accentViolet else Color.White.copy(alpha = 0.2f),
+                    tint = if (task.is_important) accentViolet else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -523,7 +523,7 @@ fun TaskDetailPanel(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0C0A1C))
+            .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
     ) {
         // Toolbar header with Edit and Delete options on the right
@@ -533,11 +533,11 @@ fun TaskDetailPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { /* Pencil Edit Trigger placeholder */ }) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit title", tint = Color.White.copy(alpha = 0.6f))
+                    Icon(Icons.Default.Edit, contentDescription = "Edit title", tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete Directive", tint = Color.Red.copy(alpha = 0.8f))
@@ -556,7 +556,7 @@ fun TaskDetailPanel(
                 Icon(
                     imageVector = if (task.is_completed) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                     contentDescription = "Status",
-                    tint = if (task.is_completed) accentViolet else Color.White.copy(alpha = 0.3f),
+                    tint = if (task.is_completed) accentViolet else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                     modifier = Modifier.size(28.dp)
                 )
             }
@@ -571,7 +571,7 @@ fun TaskDetailPanel(
                 },
                 modifier = Modifier.weight(1f),
                 textStyle = MaterialTheme.typography.titleLarge.copy(
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Black,
                     textDecoration = if (task.is_completed) TextDecoration.LineThrough else TextDecoration.None
                 ),
@@ -581,14 +581,14 @@ fun TaskDetailPanel(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent
                 ),
-                placeholder = { Text("Task Title...", color = Color.White.copy(alpha = 0.3f)) }
+                placeholder = { Text("Task Title...", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)) }
             )
 
             IconButton(onClick = { onImportanceChange(!task.is_important) }) {
                 Icon(
                     imageVector = if (task.is_important) Icons.Default.Star else Icons.Default.StarBorder,
                     contentDescription = "Star",
-                    tint = if (task.is_important) accentViolet else Color.White.copy(alpha = 0.2f),
+                    tint = if (task.is_important) accentViolet else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -637,7 +637,7 @@ fun TaskDetailPanel(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color(0xFF2DE1FC), modifier = Modifier.size(12.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(dateLabel, color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(dateLabel, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -649,7 +649,7 @@ fun TaskDetailPanel(
                 isHigh -> accentViolet
                 isMedium -> Color(0xFFFFB300)
                 isLow -> Color(0xFF00FFC6)
-                else -> Color.White.copy(alpha = 0.4f)
+                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
             }
             Box(
                 modifier = Modifier
@@ -663,7 +663,7 @@ fun TaskDetailPanel(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (task.priority != "none") task.priority.uppercase() else "Priority",
-                        color = Color.White.copy(alpha = 0.8f),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -675,7 +675,7 @@ fun TaskDetailPanel(
                 ) {
                     listOf("none", "low", "medium", "high").forEach { pri ->
                         DropdownMenuItem(
-                            text = { Text(pri.uppercase(), color = Color.White) },
+                            text = { Text(pri.uppercase(), color = MaterialTheme.colorScheme.onSurface) },
                             onClick = {
                                 onPriorityChange(pri)
                                 isPriorityMenuExpanded = false
@@ -700,7 +700,7 @@ fun TaskDetailPanel(
                         modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(task.workspace.uppercase(), color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(task.workspace.uppercase(), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -719,13 +719,13 @@ fun TaskDetailPanel(
         ) {
             Text(
                 "Subtasks",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
                 "$completedSteps / $totalSteps",
-                color = Color.White.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -761,7 +761,7 @@ fun TaskDetailPanel(
                         ) {
                             Text(
                                 "No subtasks yet. Break this task into steps.",
-                                color = Color.White.copy(alpha = 0.25f),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
                                 fontSize = 11.sp
                             )
                         }
@@ -779,14 +779,14 @@ fun TaskDetailPanel(
                                 Icon(
                                     imageVector = if (step.is_completed) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                                     contentDescription = null,
-                                    tint = if (step.is_completed) accentViolet else Color.White.copy(alpha = 0.3f),
+                                    tint = if (step.is_completed) accentViolet else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = step.title,
-                                color = if (step.is_completed) Color.White.copy(alpha = 0.4f) else Color.White,
+                                color = if (step.is_completed) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurface,
                                 fontSize = 13.sp,
                                 textDecoration = if (step.is_completed) TextDecoration.LineThrough else TextDecoration.None,
                                 modifier = Modifier.weight(1f)
@@ -795,7 +795,7 @@ fun TaskDetailPanel(
                                 Icon(
                                     imageVector = Icons.Default.DragHandle,
                                     contentDescription = "Reorder",
-                                    tint = Color.White.copy(alpha = 0.2f),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -803,7 +803,7 @@ fun TaskDetailPanel(
                                 Icon(
                                     Icons.Default.Delete,
                                     contentDescription = "Delete",
-                                    tint = Color.White.copy(alpha = 0.2f),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -832,7 +832,7 @@ fun TaskDetailPanel(
                 BasicTextField(
                     value = newSubtaskTitle,
                     onValueChange = { newSubtaskTitle = it },
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                     modifier = Modifier.weight(1f),
                     decorationBox = { innerTextField ->
                         if (newSubtaskTitle.isEmpty()) {
@@ -860,7 +860,7 @@ fun TaskDetailPanel(
         // Notes Area
         Text(
             "Notes",
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = 8.dp, top = 16.dp)
@@ -870,7 +870,7 @@ fun TaskDetailPanel(
             colors = CardDefaults.cardColors(containerColor = cardBackground),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().height(100.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.03f))
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
         ) {
             Box(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                 BasicTextField(
@@ -880,12 +880,12 @@ fun TaskDetailPanel(
                         onNotesChange(it.ifBlank { null })
                     },
                     modifier = Modifier.fillMaxSize().padding(bottom = 20.dp),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
                     decorationBox = { innerTextField ->
                         if (notesText.isEmpty()) {
                             Text(
                                 "Add a note... Capture context, links, or ideas.",
-                                color = Color.White.copy(alpha = 0.3f),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                                 fontSize = 12.sp
                             )
                         }
@@ -895,7 +895,7 @@ fun TaskDetailPanel(
                 Icon(
                     imageVector = Icons.Default.Edit,
                     contentDescription = "Edit Notes",
-                    tint = Color.White.copy(alpha = 0.4f),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                     modifier = Modifier
                         .size(16.dp)
                         .align(Alignment.BottomEnd)
@@ -957,11 +957,11 @@ fun AddTaskBottomSheet(
     val context = LocalContext.current
 
     val accentCyan = Color(0xFF2DE1FC)
-    val cardBackground = Color(0xFF13112E)
+    val cardBackground = MaterialTheme.colorScheme.surface
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF0C0A1C)
+        containerColor = MaterialTheme.colorScheme.background
     ) {
         Column(
             modifier = Modifier
@@ -969,18 +969,18 @@ fun AddTaskBottomSheet(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Create New Task", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("Create New Task", color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold)
 
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                label = { Text("What needs to be done?", color = Color.White.copy(alpha = 0.5f)) },
+                label = { Text("What needs to be done?", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)) },
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedTextColor = Color.White,
-                    focusedTextColor = Color.White,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
                     focusedBorderColor = accentCyan,
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.1f)
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
                 ),
                 singleLine = true
             )
@@ -990,7 +990,7 @@ fun AddTaskBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Add to My Day", color = Color.White, fontSize = 14.sp)
+                Text("Add to My Day", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                 Switch(
                     checked = addToMyDay,
                     onCheckedChange = { addToMyDay = it },
@@ -1006,7 +1006,7 @@ fun AddTaskBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Due Date", color = Color.White, fontSize = 14.sp)
+                Text("Due Date", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                 Button(
                     onClick = {
                         val calendar = Calendar.getInstance()

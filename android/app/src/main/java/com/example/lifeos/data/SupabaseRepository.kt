@@ -315,6 +315,78 @@ class SupabaseRepository {
         }
     }
 
+    // --- Calendar Events ---
+    suspend fun getCalendarEvents(userId: String): List<CalendarEvent> = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("calendar_events").select {
+                filter { eq("user_id", userId) }
+            }.decodeList<CalendarEvent>()
+        } catch (e: Exception) {
+            Log.w("Supabase", "Fetch calendar events from Supabase failed, using local mock data.", e)
+            val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            listOf(
+                CalendarEvent(
+                    id = "mock-1",
+                    user_id = userId,
+                    title = "Project Sync",
+                    type = CalendarEventType.WORK,
+                    date = todayDate,
+                    start_time = "10:30",
+                    end_time = "11:30",
+                    location = "Meeting Room A"
+                ),
+                CalendarEvent(
+                    id = "mock-2",
+                    user_id = userId,
+                    title = "Gym Session",
+                    type = CalendarEventType.PERSONAL,
+                    date = todayDate,
+                    start_time = "17:30",
+                    end_time = "19:00",
+                    location = "Gold's Gym"
+                ),
+                CalendarEvent(
+                    id = "mock-3",
+                    user_id = userId,
+                    title = "Dinner with family",
+                    type = CalendarEventType.PERSONAL,
+                    date = todayDate,
+                    start_time = "20:30",
+                    end_time = "21:30",
+                    location = "Indiranagar"
+                )
+            )
+        }
+    }
+
+    suspend fun createCalendarEvent(event: CalendarEvent) = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("calendar_events").insert(event)
+        } catch (e: Exception) {
+            Log.e("Supabase", "Create calendar event failed", e)
+        }
+    }
+
+    suspend fun updateCalendarEvent(event: CalendarEvent) = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("calendar_events").update(event) {
+                filter { eq("id", event.id) }
+            }
+        } catch (e: Exception) {
+            Log.e("Supabase", "Update calendar event failed", e)
+        }
+    }
+
+    suspend fun deleteCalendarEvent(eventId: String) = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("calendar_events").delete {
+                filter { eq("id", eventId) }
+            }
+        } catch (e: Exception) {
+            Log.e("Supabase", "Delete calendar event failed", e)
+        }
+    }
+
     // --- Intelligence Context ---
     suspend fun getIntelligenceSnapshot(userId: String): String = withContext(Dispatchers.IO) {
         try {
@@ -323,8 +395,34 @@ class SupabaseRepository {
             val totalBalance = accounts.sumOf { it.current_balance.toDouble() }
             val fitness = getFitnessActivities(userId).take(3)
             
+            val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            val calendar = Calendar.getInstance()
+            calendar.add(Calendar.DAY_OF_YEAR, 7)
+            val nextWeekDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(calendar.time)
+            
+            val allEvents = getCalendarEvents(userId)
+            val todayEvents = allEvents.filter { it.date == todayDate }
+            val upcomingEvents = allEvents.filter { it.date > todayDate && it.date <= nextWeekDate }
+                .sortedBy { it.date }
+            
             buildString {
                 append("Sir, here is your current status:\n")
+                
+                if (todayEvents.isNotEmpty()) {
+                    append("- Today's Schedule:\n")
+                    todayEvents.forEach { event ->
+                        val timeStr = if (event.is_all_day) "All day" else "${event.start_time} - ${event.end_time}"
+                        append("  * ${event.title} ($timeStr)\n")
+                    }
+                }
+
+                if (upcomingEvents.isNotEmpty()) {
+                    append("- Upcoming Events (Next 7 Days):\n")
+                    upcomingEvents.forEach { event ->
+                        append("  * ${event.date}: ${event.title}\n")
+                    }
+                }
+
                 append("- Active Tasks (${tasksList.size}):\n")
                 tasksList.take(5).forEach { task ->
                     append("  * ${task.title} (ID: ${task.id})\n")

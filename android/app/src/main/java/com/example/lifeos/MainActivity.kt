@@ -20,19 +20,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 object VoiceQueryManager {
     val queryFlow = MutableStateFlow<String?>(null)
     val isAlarmActive = MutableStateFlow(false)
+    val isDarkTheme = MutableStateFlow(true) // Default to dark
 }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        
+        // Initialize theme state from prefs
+        VoiceQueryManager.isDarkTheme.value = com.example.lifeos.jarvis.prefs.JarvisPrefs.isDarkTheme(this)
+
         handleIntent(intent)
 
         enableEdgeToEdge()
         setContent {
             val isAlarmActive by VoiceQueryManager.isAlarmActive.collectAsState()
+            val isDarkTheme by VoiceQueryManager.isDarkTheme.collectAsState()
 
-            LifeOSTheme {
+            LifeOSTheme(darkTheme = isDarkTheme) {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         MainNavigation()

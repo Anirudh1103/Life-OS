@@ -84,7 +84,7 @@ export const JarvisMessageItem: React.FC<JarvisMessageItemProps> = ({
                   ) : (
                     <Pause className="h-3 w-3 fill-current" />
                   )}
-                  <span>{isSpeaking ? (isPaused ? 'Resuming' : 'Speaking') : 'Read Out'}</span>
+                  <span>{isSpeaking ? (isPaused ? 'Resume' : 'Speaking') : 'Read Out'}</span>
 
                   {/* Equalizer pulse when playing */}
                   {isPlaying && (

@@ -31,8 +31,8 @@ fun FinanceScreen(
     val accounts by viewModel.accounts.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
 
-    val darkBackground = Color(0xFF0C0A1C)
-    val cardBackground = Color(0xFF13112E)
+    val darkBackground = MaterialTheme.colorScheme.background
+    val cardBackground = MaterialTheme.colorScheme.surface
     val accentGreen = Color(0xFF00FFC6)
 
     Box(modifier = modifier.fillMaxSize().background(darkBackground)) {
@@ -44,7 +44,7 @@ fun FinanceScreen(
             ) {
                 Text(
                     "Financial Core",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Black
                 )
@@ -68,7 +68,7 @@ fun FinanceScreen(
                 }
 
                 item {
-                    Text("Account Assets", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Account Assets", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -81,12 +81,12 @@ fun FinanceScreen(
                 }
 
                 item {
-                    Text("Recent Activity", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Recent Activity", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 if (transactions.isEmpty()) {
                     item {
-                        Text("No transaction logs detected.", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp)
+                        Text("No transaction logs detected.", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f), fontSize = 12.sp)
                     }
                 } else {
                     items(transactions) { tx ->
@@ -101,13 +101,13 @@ fun FinanceScreen(
 @Composable
 fun AccountPill(name: String, balance: Float, modifier: Modifier) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1B183E)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
         shape = RoundedCornerShape(12.dp),
         modifier = modifier
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(name, color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp, maxLines = 1)
-            Text("₹ ${balance.toInt()}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(name, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontSize = 10.sp, maxLines = 1)
+            Text("₹ ${balance.toInt()}", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -123,9 +123,9 @@ fun BalanceCard(balance: Float, accent: Color, background: Color) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Liquidity Pool", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                Text("Liquidity Pool", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 12.sp)
             }
-            Text("₹ ${String.format(Locale.US, "%,.0f", balance)}", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black)
+            Text("₹ ${String.format(Locale.US, "%,.0f", balance)}", color = MaterialTheme.colorScheme.onSurface, fontSize = 32.sp, fontWeight = FontWeight.Black)
             Spacer(modifier = Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 FlowStat("Health", "Nominal", Icons.AutoMirrored.Filled.TrendingUp, Color(0xFF00FFC6))
@@ -141,15 +141,15 @@ fun FlowStat(label: String, value: String, icon: androidx.compose.ui.graphics.ve
         Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
         Spacer(modifier = Modifier.width(4.dp))
         Column {
-            Text(label, color = Color.White.copy(alpha = 0.4f), fontSize = 9.sp)
-            Text(value, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(label, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 9.sp)
+            Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
 fun TransactionItem(tx: FinanceTransaction, background: Color) {
-    val amountColor = if (tx.type == "income") Color(0xFF00FFC6) else Color.White
+    val amountColor = if (tx.type == "income") Color(0xFF00FFC6) else MaterialTheme.colorScheme.onSurface
 
     Card(
         colors = CardDefaults.cardColors(containerColor = background),
@@ -162,8 +162,8 @@ fun TransactionItem(tx: FinanceTransaction, background: Color) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(tx.merchant ?: tx.description ?: "Unknown", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(tx.transaction_date.take(10), color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp)
+                Text(tx.merchant ?: tx.description ?: "Unknown", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text(tx.transaction_date.take(10), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 11.sp)
             }
             Text(
                 text = "${if (tx.type == "income") "+" else "-"} ₹ ${Math.abs(tx.amount).toInt()}",

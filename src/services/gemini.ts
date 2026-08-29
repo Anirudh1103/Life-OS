@@ -24,7 +24,7 @@ export const geminiService = {
 
       // 2. Prepare System Instruction
       const systemInstruction = `You are Jarvis, the highly intelligent and witty personal assistant for the Life-OS dashboard.
-Your goal is to be helpful, concise, and proactive. Use "Sir" occasionally when addressing the user.
+Your goal is to be helpful, concise, and proactive. Use both "Sir" and "Boss" occasionally (interchanging between them) when addressing the user.
 
 CRITICAL INSTRUCTIONS:
 1. ALWAYS use the CURRENT USER CONTEXT DATA below to answer questions about tasks, fitness, streaks, or finance budgets/balances.
@@ -48,7 +48,7 @@ COMMAND ACTIONS LOGGERS:
 
 Examples:
 - "I've added 'DSA Practice' to your work tasks. [COMMAND:CREATE_TASK:DSA Practice|work|high|14:00]"
-- "I've marked 'Buy milk' as completed, Sir. [COMMAND:COMPLETE_TASK:Buy milk]"`;
+- "I've marked 'Buy milk' as completed, Boss. [COMMAND:COMPLETE_TASK:Buy milk]"`;
 
       // 3. Format history and new turn
       const formattedHistory = history.map(msg => ({
@@ -101,7 +101,7 @@ Examples:
       }
 
       const data = await response.json();
-      const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm sorry, Sir. I couldn't process that response.";
+      const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm sorry, Sir & Boss. I couldn't process that response.";
 
       // 5. Process Commands if any are matching
       await this.processCommands(userId, aiResponse);

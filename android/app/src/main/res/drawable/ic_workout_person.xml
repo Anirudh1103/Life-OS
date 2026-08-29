@@ -1,0 +1,69 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+  <!-- Head -->
+  <path
+      android:pathData="M50,15 A6,6 0 1,0 50,27 A6,6 0 1,0 50,15"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.5"
+      android:strokeLineCap="round"/>
+  <!-- Neck & Traps -->
+  <path
+      android:pathData="M48,27 L48,31 L42,34 L36,35 M52,27 L52,31 L58,34 L64,35"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.5"
+      android:strokeLineCap="round"/>
+  <!-- Shoulders & Arms Left -->
+  <path
+      android:pathData="M36,35 C32,37 30,42 29,48 C28,54 30,62 28,68 C27,71 29,74 31,72 C32,70 33,64 34,58 M29,48 C32,49 35,46 36,44"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.2"
+      android:strokeLineCap="round"/>
+  <!-- Shoulders & Arms Right -->
+  <path
+      android:pathData="M64,35 C68,37 70,42 71,48 C72,54 70,62 72,68 C73,71 71,74 69,72 C68,70 67,64 66,58 M71,48 C68,49 65,46 64,44"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.2"
+      android:strokeLineCap="round"/>
+  <!-- Chest -->
+  <path
+      android:pathData="M38,35 C42,38 45,39 50,39 C55,39 58,38 62,35 M50,39 L50,56 M42,46 C45,48 48,49 50,49 C52,49 55,48 58,46"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.2"
+      android:strokeLineCap="round"/>
+  <!-- Torso & Abs -->
+  <path
+      android:pathData="M38,35 L40,56 L43,72 M62,35 L60,56 L57,72 M40,56 C44,57 47,58 50,58 C53,58 56,57 60,56 M41,64 C44,65 47,66 50,66 C53,66 56,65 59,64 M42,72 C45,73 47,74 50,74 C53,74 56,73 58,72"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.2"
+      android:strokeLineCap="round"/>
+  <!-- Pelvis -->
+  <path
+      android:pathData="M43,72 L41,79 L50,84 L59,79 L57,72 M50,74 L50,84"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.5"
+      android:strokeLineCap="round"/>
+  <!-- Legs Left -->
+  <path
+      android:pathData="M41,79 C39,85 38,91 39,97 M45,81 C44,88 44,94 45,97"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.2"
+      android:strokeLineCap="round"/>
+  <!-- Legs Right -->
+  <path
+      android:pathData="M59,79 C61,85 62,91 61,97 M55,81 C56,88 56,94 55,97"
+      android:fillColor="#00000000"
+      android:strokeColor="#FFFFFF"
+      android:strokeWidth="1.2"
+      android:strokeLineCap="round"/>
+</vector>

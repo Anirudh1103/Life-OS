@@ -72,7 +72,16 @@ export const JarvisResponseCard: React.FC<JarvisResponseCardProps> = ({ text, on
     }
 
     // 4. Parse Greeting (usually first descriptive line)
-    if (!greeting && (trimmed.toLowerCase().includes('good morning') || trimmed.toLowerCase().includes('good evening') || trimmed.toLowerCase().includes('hello') || trimmed.toLowerCase().includes('hi, sir'))) {
+    if (!greeting && (
+      trimmed.toLowerCase().includes('good morning') || 
+      trimmed.toLowerCase().includes('good evening') || 
+      trimmed.toLowerCase().includes('good day') || 
+      trimmed.toLowerCase().includes('hello') || 
+      trimmed.toLowerCase().includes('hi, sir') || 
+      trimmed.toLowerCase().includes('hi, boss') || 
+      trimmed.toLowerCase().includes('sir & boss') || 
+      trimmed.toLowerCase().includes('sir or boss')
+    )) {
       greeting = trimmed;
       return;
     }

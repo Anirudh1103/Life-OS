@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">LifeOS</string>
+    <string name="attribution_label">JARVIS Neural Link</string>
 </resources>

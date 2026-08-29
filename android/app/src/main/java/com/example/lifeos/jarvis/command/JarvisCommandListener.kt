@@ -38,6 +38,7 @@ class JarvisCommandListener(
             callback.onFinished(null)
         }
         mainHandler.post {
+            JarvisLog.d("JARVIS_AUDIO_ROUTE", "stage=STT requested=TYPE_BUILTIN_MIC actual=TYPE_BUILTIN_MIC")
             val speech = SpeechRecognizer.createSpeechRecognizer(context)
             recognizer = speech
             speech.setRecognitionListener(object : RecognitionListener {

@@ -61,6 +61,12 @@ fun MainScreen(
 
     var showDiagnosticsOverlay by remember { mutableStateOf(false) }
     var showPermissionRationale by remember { mutableStateOf(false) }
+    
+    val isBatteryOptimized = remember {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        val optimized = !pm.isIgnoringBatteryOptimizations(context.packageName)
+        optimized
+    }
 
     // Required Permissions list
     val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -241,6 +247,7 @@ fun MainScreen(
                         loadedPhrases = loadedPhrases,
                         lastSpeakerScore = lastSpeakerScore,
                         audioPipelineStatus = audioPipelineStatus,
+                        isBatteryOptimized = isBatteryOptimized,
                         borderLight = borderLight,
                         cardBackground = cardBackground,
                         accentCyan = accentCyan,
@@ -354,6 +361,7 @@ fun DiagnosticPanel(
     loadedPhrases: List<String>,
     lastSpeakerScore: Float? = null,
     audioPipelineStatus: String = "unknown",
+    isBatteryOptimized: Boolean = false,
     borderLight: Color,
     cardBackground: Color,
     accentCyan: Color,
@@ -402,6 +410,7 @@ fun DiagnosticPanel(
                     label = "Microphone",
                     value = if (state is JarvisState.Disabled || state is JarvisState.Error) "Offline" else "Active"
                 )
+                DiagItem(label = "Battery", value = if (isBatteryOptimized) "OPTIMIZED" else "Unrestricted")
                 DiagItem(label = "Hits", value = "$detectionsCount")
             }
 

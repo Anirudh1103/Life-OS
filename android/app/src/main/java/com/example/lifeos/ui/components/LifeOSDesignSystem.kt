@@ -245,7 +245,7 @@ fun LifeOSCard(
         modifier = modifier
             .fillMaxWidth()
             .then(clickableModifier),
-        color = CardBg.copy(alpha = 0.7f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
         shape = RoundedCornerShape(24.dp),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)),
         content = {

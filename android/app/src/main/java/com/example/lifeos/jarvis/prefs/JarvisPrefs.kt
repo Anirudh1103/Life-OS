@@ -3,6 +3,21 @@ package com.example.lifeos.jarvis.prefs
 import android.content.Context
 import android.content.SharedPreferences
 
+enum class WakeWordSetupState {
+    NOT_CONFIGURED,
+    IN_PROGRESS,
+    COMPLETED,
+    SKIPPED
+}
+
+enum class VoiceEnrollmentState {
+    NOT_STARTED,
+    RECORDING,
+    PROCESSING,
+    ENROLLED,
+    FAILED
+}
+
 /**
  * Single location for JARVIS listening / security preferences.
  * Voice embeddings are stored separately by [com.example.lifeos.jarvis.speaker.SpeakerProfileStore].
@@ -19,6 +34,8 @@ object JarvisPrefs {
     private const val KEY_RUN_IN_BACKGROUND = "run_in_background"
     private const val KEY_AUTO_LISTEN_BOOT = "auto_listen_boot"
     private const val KEY_WAKE_WORD_SENSITIVITY = "wake_word_sensitivity"
+    private const val KEY_DARK_THEME = "dark_theme_enabled"
+    private const val KEY_WAKE_WORD_STATUS = "wake_word_status"
 
     /** Default: do not listen until the user explicitly enables JARVIS. */
     const val DEFAULT_LISTEN_ENABLED = false
@@ -67,6 +84,28 @@ object JarvisPrefs {
         prefs(context).edit().putBoolean(KEY_SETUP_COMPLETED, completed).apply()
     }
 
+    fun getWakeWordSetupState(context: Context): WakeWordSetupState {
+        val raw = prefs(context).getString(KEY_WAKE_WORD_STATUS, WakeWordSetupState.NOT_CONFIGURED.name)
+        return try {
+            WakeWordSetupState.valueOf(raw ?: WakeWordSetupState.NOT_CONFIGURED.name)
+        } catch (_: Exception) {
+            WakeWordSetupState.NOT_CONFIGURED
+        }
+    }
+
+    fun setWakeWordSetupState(context: Context, state: WakeWordSetupState) {
+        prefs(context).edit().putString(KEY_WAKE_WORD_STATUS, state.name).apply()
+        setSetupCompleted(context, state == WakeWordSetupState.COMPLETED)
+    }
+
+    fun getWakeWordStatus(context: Context): String =
+        prefs(context).getString(KEY_WAKE_WORD_STATUS, "NOT_CONFIGURED") ?: "NOT_CONFIGURED"
+
+    fun setWakeWordStatus(context: Context, status: String) {
+        prefs(context).edit().putString(KEY_WAKE_WORD_STATUS, status).apply()
+        setSetupCompleted(context, status == "CONFIGURED" || status == WakeWordSetupState.COMPLETED.name)
+    }
+
     fun hasSeenIntro(context: Context): Boolean =
         prefs(context).getBoolean(KEY_INTRO_SEEN, false)
 
@@ -93,5 +132,12 @@ object JarvisPrefs {
 
     fun setWakeWordSensitivity(context: Context, sensitivity: Float) {
         prefs(context).edit().putFloat(KEY_WAKE_WORD_SENSITIVITY, sensitivity).apply()
+    }
+
+    fun isDarkTheme(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DARK_THEME, true)
+
+    fun setDarkTheme(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DARK_THEME, enabled).apply()
     }
 }

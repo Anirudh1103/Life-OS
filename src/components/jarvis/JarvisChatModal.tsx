@@ -70,7 +70,7 @@ export const JarvisChatModal: React.FC<JarvisChatModalProps> = ({
       voice.stop();
       localStorage.removeItem('life_os_jarvis_history');
       setMessages([
-        { role: 'model', content: "Memory buffer wiped, Sir. Re-initializing core systems.\n\n[What's on my day?]\n[Check fitness status]" }
+        { role: 'model', content: "Memory buffer wiped, Sir & Boss. Re-initializing core systems.\n\n[What's on my day?]\n[Check fitness status]" }
       ]);
       setActiveSpeakingIdx(null);
     }

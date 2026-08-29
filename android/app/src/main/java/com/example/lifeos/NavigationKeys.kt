@@ -12,3 +12,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object Profile : NavKey
 @Serializable data object Settings : NavKey
 @Serializable data object VoiceEnrollment : NavKey
+@Serializable data object Calendar : NavKey
+@Serializable data object Focus : NavKey
+@Serializable data object Journal : NavKey
+@Serializable data object Resources : NavKey

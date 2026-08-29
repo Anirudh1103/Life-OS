@@ -72,7 +72,7 @@ fun AlarmOverlayScreen(onDismiss: () -> Unit) {
                         context.stopService(Intent(context, AlarmService::class.java))
                         isDismissed = true
                         // Trigger Daily Briefing via JarvisController
-                        JarvisController.processQuery("summary")
+                        JarvisController.processQuery("Good morning", isVoiceQuery = true)
                         onDismiss()
                     },
                 contentAlignment = Alignment.Center

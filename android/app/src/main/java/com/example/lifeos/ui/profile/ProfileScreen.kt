@@ -21,8 +21,8 @@ fun ProfileScreen(
     onToggleDiagnostics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val darkBackground = Color(0xFF0C0A1C)
-    val cardBackground = Color(0xFF13112E)
+    val darkBackground = MaterialTheme.colorScheme.background
+    val cardBackground = MaterialTheme.colorScheme.surface
     val accentViolet = Color(0xFF8A5DF2)
 
     Column(
@@ -41,7 +41,7 @@ fun ProfileScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("ANIRUDH", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+        Text("ANIRUDH", color = MaterialTheme.colorScheme.onBackground, fontSize = 24.sp, fontWeight = FontWeight.Black)
         Text("SYSTEM ADMINISTRATOR", color = Color(0xFF2DE1FC), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
 
         Spacer(modifier = Modifier.height(40.dp))
@@ -54,10 +54,10 @@ fun ProfileScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFF00FFC6), modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("Security Clearance", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Security Clearance", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                Text("Level 5 (Alpha)", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+                Text("Level 5 (Alpha)", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 13.sp)
             }
         }
 
@@ -66,14 +66,14 @@ fun ProfileScreen(
         Button(
             onClick = onToggleDiagnostics,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.05f)),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
             shape = MaterialTheme.shapes.medium
         ) {
-            Text("ACCESS SYSTEM DIAGNOSTICS", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("ACCESS SYSTEM DIAGNOSTICS", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
 
         Spacer(modifier = Modifier.weight(1f))
 
-        Text("LifeOS Strategic Interface v1.0.4", color = Color.White.copy(alpha = 0.15f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text("LifeOS Strategic Interface v1.0.4", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
     }
 }

@@ -5,7 +5,7 @@ import com.google.ai.client.generativeai.GenerativeModel
 class GeminiProvider(private val apiKey: String) : BrainProvider {
     override val name: String = "Google Gemini"
     private val model = GenerativeModel(
-        modelName = "gemini-1.5-flash",
+        modelName = "gemini-1.5-flash-latest",
         apiKey = apiKey
     )
 
@@ -15,7 +15,7 @@ class GeminiProvider(private val apiKey: String) : BrainProvider {
             return null
         }
         return try {
-            android.util.Log.d("JARVIS", "Gemini: Sending request to API (model=gemini-1.5-flash)...")
+            android.util.Log.d("JARVIS", "Gemini: Sending request to API (model=gemini-1.5-flash-latest)...")
             val response = model.generateContent(prompt)
             val text = response.text
             android.util.Log.d("JARVIS", "Gemini: Received response, length=${text?.length ?: 0}")

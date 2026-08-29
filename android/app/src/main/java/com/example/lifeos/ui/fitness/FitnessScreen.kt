@@ -27,15 +27,16 @@ fun FitnessScreen(
     viewModel: DashboardViewModel = viewModel()
 ) {
     val activities by viewModel.fitnessActivities.collectAsState()
-    val darkBackground = Color(0xFF0C0A1C)
-    val cardBackground = Color(0xFF13112E)
+    val darkBackground = MaterialTheme.colorScheme.background
+    val cardBackground = MaterialTheme.colorScheme.surface
     val accentGreen = Color(0xFF00FFC6)
+    val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
 
     Box(modifier = modifier.fillMaxSize().background(darkBackground)) {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Text(
                 "Fitness Console",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black
             )
@@ -54,15 +55,15 @@ fun FitnessScreen(
 
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.History, contentDescription = null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Session Logs", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Session Logs", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
                 if (activities.isEmpty()) {
                     item {
-                        Text("No kinetic logs detected, Sir.", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp)
+                        Text("No kinetic logs detected, $title.", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f), fontSize = 12.sp)
                     }
                 } else {
                     items(activities) { activity ->
@@ -84,8 +85,8 @@ fun ActivityOverviewCard(count: Int, accent: Color, background: Color, modifier:
         Column(modifier = Modifier.padding(20.dp)) {
             Icon(Icons.AutoMirrored.Filled.DirectionsRun, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.height(12.dp))
-            Text("Sessions", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
-            Text("$count", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+            Text("Sessions", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 12.sp)
+            Text("$count", color = MaterialTheme.colorScheme.onSurface, fontSize = 24.sp, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -100,8 +101,8 @@ fun WeightCard(weight: String, background: Color, modifier: Modifier) {
         Column(modifier = Modifier.padding(20.dp)) {
             Icon(Icons.Default.MonitorWeight, contentDescription = null, tint = Color(0xFF2DE1FC), modifier = Modifier.size(24.dp))
             Spacer(modifier = Modifier.height(12.dp))
-            Text("Weight", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
-            Text(weight, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+            Text("Weight", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), fontSize = 12.sp)
+            Text(weight, color = MaterialTheme.colorScheme.onSurface, fontSize = 24.sp, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -119,8 +120,8 @@ fun ActivityItem(activity: FitnessActivity, background: Color) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(activity.notes ?: "Energy Output", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text("${activity.duration_minutes} mins • ${activity.started_at.take(10)}", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp)
+                Text(activity.notes ?: "Energy Output", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("${activity.duration_minutes} mins • ${activity.started_at.take(10)}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 11.sp)
             }
             if (activity.calories != null) {
                 Text(

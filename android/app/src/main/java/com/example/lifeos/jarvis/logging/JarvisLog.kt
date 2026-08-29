@@ -18,6 +18,10 @@ object JarvisLog {
         if (detail.isNullOrBlank()) Log.w(TAG, event) else Log.w(TAG, "$event | $detail")
     }
 
+    fun e(event: String, detail: String) {
+        Log.e(TAG, "$event | $detail")
+    }
+
     fun e(event: String, throwable: Throwable? = null) {
         if (throwable != null) Log.e(TAG, event, throwable) else Log.e(TAG, event)
     }

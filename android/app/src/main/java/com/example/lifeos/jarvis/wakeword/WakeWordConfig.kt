@@ -25,7 +25,7 @@ object WakeWordConfig {
     const val PHRASE = "Hey Jarvis"
     const val KEYWORD_ALIAS = "hey_jarvis"
 
-    const val KEYWORD_BPE = "\u2581HE Y \u2581JA R V IS"
+    const val KEYWORD_BPE = "\u2581HE Y \u2581JA R V I S"
 
     fun keywordLine(): String = "$KEYWORD_BPE @$KEYWORD_ALIAS"
 
@@ -35,16 +35,14 @@ object WakeWordConfig {
     const val FRAME_MS = 100
 
     /**
-     * Token boosting. Library default is 1.5.
-     * 1.5 is standard for robust detection.
+     * Token boosting. Standard 3.0f for highly responsive detection.
      */
-    const val KEYWORDS_SCORE = 1.5f
+    const val KEYWORDS_SCORE = 3.0f
 
     /**
-     * Detection threshold. Library default is 0.25.
-     * 0.25 is maximum sensitivity for the acoustic model.
+     * Detection threshold. Standard 0.05f for maximum sensitivity.
      */
-    const val KEYWORDS_THRESHOLD = 0.25f
+    const val KEYWORDS_THRESHOLD = 0.05f
 
     const val NUM_TRAILING_BLANKS = 2
 

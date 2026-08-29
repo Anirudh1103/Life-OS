@@ -2226,7 +2226,7 @@ export const dbService = {
     const sortedDays = Array.from(completedDays).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
 
     if (sortedDays.length === 0) {
-      return { current: 24, best: 45 }; // Default mockup value
+      return isMockEnabled ? { current: 24, best: 45 } : { current: 0, best: 0 };
     }
 
     // Calculate current streak
@@ -2304,9 +2304,9 @@ export const dbService = {
       
       // Load details dynamically for mock tasks
       for (const t of workspaceTasks) {
-        t.is_completed = t.is_completed === true || t.is_completed === 'true';
-        t.is_important = t.is_important === true || t.is_important === 'true';
-        t.is_in_today = t.is_in_today === true || t.is_in_today === 'true';
+        t.is_completed = t.is_completed === true || (t.is_completed as any) === 'true';
+        t.is_important = t.is_important === true || (t.is_important as any) === 'true';
+        t.is_in_today = t.is_in_today === true || (t.is_in_today as any) === 'true';
 
         const steps = await this.getTaskSteps(userId, t.id);
         t.steps_count = steps.length;
@@ -2332,9 +2332,9 @@ export const dbService = {
 
     // Hydrate counts and flows in parallel
     for (const t of tasks) {
-      t.is_completed = t.is_completed === true || t.is_completed === 'true';
-      t.is_important = t.is_important === true || t.is_important === 'true';
-      t.is_in_today = t.is_in_today === true || t.is_in_today === 'true';
+      t.is_completed = t.is_completed === true || (t.is_completed as any) === 'true';
+      t.is_important = t.is_important === true || (t.is_important as any) === 'true';
+      t.is_in_today = t.is_in_today === true || (t.is_in_today as any) === 'true';
 
       const [{ count: stepsCount }, { count: compStepsCount }, { count: filesCount }, flow] = await Promise.all([
         supabase!.from('task_steps').select('*', { count: 'exact', head: true }).eq('task_id', t.id),
@@ -2487,7 +2487,7 @@ export const dbService = {
         .filter(s => s.task_id === taskId && s.user_id === userId)
         .map(s => ({
           ...s,
-          is_completed: s.is_completed === true || s.is_completed === 'true'
+          is_completed: s.is_completed === true || (s.is_completed as any) === 'true'
         }))
         .sort((a, b) => a.sort_order - b.sort_order);
     }
@@ -2503,7 +2503,7 @@ export const dbService = {
     const steps: TaskStep[] = data || [];
     return steps.map(s => ({
       ...s,
-      is_completed: s.is_completed === true || s.is_completed === 'true'
+      is_completed: s.is_completed === true || (s.is_completed as any) === 'true'
     }));
   },
 

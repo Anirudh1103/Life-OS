@@ -11,6 +11,12 @@ export const useJarvisVoice = () => {
   const activeSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
+  const sentencesRef = useRef<string[]>([]);
+  const currentSentenceIdxRef = useRef<number>(0);
+  const onStartRef = useRef<(() => void) | undefined>(undefined);
+  const onEndRef = useRef<(() => void) | undefined>(undefined);
+  const isPausedRef = useRef(false);
+
   // Check ElevenLabs key presence
   const elevenLabsApiKey = import.meta.env.VITE_ELEVENLABS_API_KEY || '';
 
@@ -18,17 +24,78 @@ export const useJarvisVoice = () => {
   const getLocalJarvisVoice = (): SpeechSynthesisVoice | null => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return null;
     const voices = window.speechSynthesis.getVoices();
-    const britishMaleVoice = voices.find(voice => {
+
+    // 1. Try to find a British Male voice (Paul Bettany style)
+    const britishMale = voices.find(voice => {
       const name = voice.name.toLowerCase();
       const lang = voice.lang.toLowerCase();
       return (
         lang.startsWith('en-gb') && 
-        (name.includes('male') || name.includes('daniel') || name.includes('arthur') || name.includes('oliver') || name.includes('google'))
+        (name.includes('male') || name.includes('daniel') || name.includes('arthur') || 
+         name.includes('oliver') || name.includes('google') || name.includes('natural') ||
+         name.includes('james') || name.includes('george'))
       );
     });
+    if (britishMale) return britishMale;
 
-    if (britishMaleVoice) return britishMaleVoice;
-    return voices.find(voice => voice.lang.toLowerCase().startsWith('en-gb')) || null;
+    // 2. Try to find any British voice that might be male (check common names, exclude known female names like hazel, susan, zira, hannah)
+    const britishAnyMale = voices.find(voice => {
+      const name = voice.name.toLowerCase();
+      const lang = voice.lang.toLowerCase();
+      return (
+        lang.startsWith('en-gb') &&
+        !name.includes('hazel') &&
+        !name.includes('susan') &&
+        !name.includes('hannah') &&
+        !name.includes('female') &&
+        !name.includes('girl') &&
+        !name.includes('woman')
+      );
+    });
+    if (britishAnyMale) return britishAnyMale;
+
+    // 3. Try to find a US/English Male voice (Microsoft David, Microsoft Mark, etc.)
+    const englishMale = voices.find(voice => {
+      const name = voice.name.toLowerCase();
+      const lang = voice.lang.toLowerCase();
+      return (
+        lang.startsWith('en-') && 
+        (name.includes('male') || name.includes('david') || name.includes('mark') || 
+         name.includes('brian') || name.includes('guy') || name.includes('george') || 
+         name.includes('james') || name.includes('natural') || name.includes('google'))
+      );
+    });
+    if (englishMale) return englishMale;
+
+    // 4. Try to find any English voice that is not explicitly female
+    const englishAnyMale = voices.find(voice => {
+      const name = voice.name.toLowerCase();
+      const lang = voice.lang.toLowerCase();
+      return (
+        lang.startsWith('en-') &&
+        !name.includes('hazel') &&
+        !name.includes('susan') &&
+        !name.includes('zira') &&
+        !name.includes('hannah') &&
+        !name.includes('female') &&
+        !name.includes('girl') &&
+        !name.includes('woman') &&
+        !name.includes('heera') &&
+        !name.includes('elena')
+      );
+    });
+    if (englishAnyMale) return englishAnyMale;
+
+    // 5. Fallback to any British voice
+    const anyBritish = voices.find(voice => voice.lang.toLowerCase().startsWith('en-gb'));
+    if (anyBritish) return anyBritish;
+
+    // 6. Fallback to any English voice
+    const anyEnglish = voices.find(voice => voice.lang.toLowerCase().startsWith('en-'));
+    if (anyEnglish) return anyEnglish;
+
+    // 7. Ultimate fallback: default voice
+    return voices.find(voice => voice.default) || voices[0] || null;
   };
 
   const playElevenLabsAudio = async (audioBlob: Blob, onStart?: () => void, onEnd?: () => void) => {
@@ -79,6 +146,51 @@ export const useJarvisVoice = () => {
     }
   };
 
+  const speakCurrentSentence = () => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    const sentences = sentencesRef.current;
+    const idx = currentSentenceIdxRef.current;
+
+    if (idx >= sentences.length) {
+      setIsPlaying(false);
+      setIsPaused(false);
+      if (onEndRef.current) onEndRef.current();
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(sentences[idx]);
+    const localVoice = getLocalJarvisVoice();
+    if (localVoice) {
+      utterance.voice = localVoice;
+    }
+
+    utterance.rate = 0.96;
+    utterance.pitch = 0.88;
+
+    utterance.onstart = () => {
+      if (idx === 0 && onStartRef.current) {
+        onStartRef.current();
+      }
+    };
+
+    utterance.onend = () => {
+      if (isPausedRef.current) return;
+      currentSentenceIdxRef.current = idx + 1;
+      speakCurrentSentence();
+    };
+
+    utterance.onerror = (e) => {
+      console.warn("Speech utterance error:", e);
+      if (isPausedRef.current) return;
+      currentSentenceIdxRef.current = idx + 1;
+      speakCurrentSentence();
+    };
+
+    currentUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  };
+
   const speak = async (
     text: string, 
     onStart?: () => void, 
@@ -86,7 +198,25 @@ export const useJarvisVoice = () => {
   ) => {
     stop();
 
-    const cleanText = text
+    const getSpeakableText = (rawText: string): string => {
+      return rawText
+        .split('\n')
+        .filter(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return false;
+          // Filter out commands
+          if (trimmed.startsWith('[COMMAND:')) return false;
+          // Filter out suggestion chips: e.g. [Prioritize task]
+          const chipMatch = trimmed.match(/^\[([^[\]]+)\]$/);
+          if (chipMatch && !trimmed.startsWith('[ ]') && !trimmed.startsWith('[x]')) {
+            return false;
+          }
+          return true;
+        })
+        .join('\n');
+    };
+
+    const cleanText = getSpeakableText(text)
       .replace(/[-*#_`~\[\]()|]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -134,37 +264,22 @@ export const useJarvisVoice = () => {
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    const localVoice = getLocalJarvisVoice();
-    if (localVoice) {
-      utterance.voice = localVoice;
+    const sentences = cleanText.split(/(?<=[.?!])\s+/).filter(Boolean);
+    if (sentences.length === 0) {
+      if (onEnd) onEnd();
+      return;
     }
 
-    utterance.rate = 0.96;
-    utterance.pitch = 0.88;
+    sentencesRef.current = sentences;
+    currentSentenceIdxRef.current = 0;
+    onStartRef.current = onStart;
+    onEndRef.current = onEnd;
+    isPausedRef.current = false;
 
-    utterance.onstart = () => {
-      setIsPlaying(true);
-      setIsPaused(false);
-      if (onStart) onStart();
-    };
+    setIsPlaying(true);
+    setIsPaused(false);
 
-    utterance.onend = () => {
-      setIsPlaying(false);
-      setIsPaused(false);
-      currentUtteranceRef.current = null;
-      if (onEnd) onEnd();
-    };
-
-    utterance.onerror = () => {
-      setIsPlaying(false);
-      setIsPaused(false);
-      currentUtteranceRef.current = null;
-      if (onEnd) onEnd();
-    };
-
-    currentUtteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
+    speakCurrentSentence();
   };
 
   const pause = () => {
@@ -175,8 +290,9 @@ export const useJarvisVoice = () => {
         setIsPaused(true);
       }
     } else if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.pause();
+      isPausedRef.current = true;
       setIsPaused(true);
+      window.speechSynthesis.cancel();
     }
   };
 
@@ -187,8 +303,9 @@ export const useJarvisVoice = () => {
         setIsPaused(false);
       }
     } else if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.resume();
+      isPausedRef.current = false;
       setIsPaused(false);
+      speakCurrentSentence();
     }
   };
 
@@ -206,6 +323,10 @@ export const useJarvisVoice = () => {
     }
 
     // Clear system SpeechSynthesis
+    isPausedRef.current = false;
+    sentencesRef.current = [];
+    currentSentenceIdxRef.current = 0;
+
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }

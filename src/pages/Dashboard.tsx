@@ -105,7 +105,7 @@ export const Dashboard: React.FC = () => {
     } else if (focusTimeLeft === 0 && focusActive) {
       setFocusActive(false);
       confetti({ particleCount: 40, spread: 50 });
-      alert("Focus Session Complete! Congratulations, Sir.");
+      alert("Focus Session Complete! Congratulations, Sir & Boss.");
       setIsFocusing(false);
       setFocusTimeLeft(25 * 60);
     }
@@ -189,62 +189,20 @@ export const Dashboard: React.FC = () => {
     });
   }, [tasks]);
 
-  // Fallback / Placeholder plan items to match mockup exactly
+  // Plan items fetched from database
   const displayPlanItems = useMemo<PlanItem[]>(() => {
-    if (todayTasks.length > 0) {
-      return todayTasks.map((t, idx) => ({
-        id: t.id,
-        title: t.title,
-        workspace: t.workspace === 'work' ? 'work' : 'personal',
-        workspaceLabel: t.workspace === 'work' ? 'Skill Development' : 'Personal Growth',
-        priority: t.priority as any,
-        time: t.due_at 
-          ? new Date(t.due_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) 
-          : idx === 0 ? '09:00 AM' : idx === 1 ? '11:30 AM' : idx === 2 ? '06:30 PM' : '08:45 PM',
-        isPlaceholder: false,
-        taskObject: t
-      }));
-    }
-    
-    // Exact placeholder items from the screenshot
-    return [
-      {
-        id: 'mock-1',
-        title: 'Read 20 pages of a book',
-        workspace: 'personal',
-        workspaceLabel: 'Personal Growth',
-        priority: 'none',
-        time: '09:00 AM',
-        isPlaceholder: true
-      },
-      {
-        id: 'mock-2',
-        title: 'DSA - Arrays Practice',
-        workspace: 'work',
-        workspaceLabel: 'Skill Development',
-        priority: 'medium',
-        time: '11:30 AM',
-        isPlaceholder: true
-      },
-      {
-        id: 'mock-3',
-        title: 'Workout for 45 minutes',
-        workspace: 'personal',
-        workspaceLabel: 'Health',
-        priority: 'high',
-        time: '06:30 PM',
-        isPlaceholder: true
-      },
-      {
-        id: 'mock-4',
-        title: 'Revise Kotlin - Extension Functions',
-        workspace: 'work',
-        workspaceLabel: 'Learning',
-        priority: 'low',
-        time: '08:45 PM',
-        isPlaceholder: true
-      }
-    ];
+    return todayTasks.map((t, idx) => ({
+      id: t.id,
+      title: t.title,
+      workspace: t.workspace === 'work' ? 'work' : 'personal',
+      workspaceLabel: t.workspace === 'work' ? 'Skill Development' : 'Personal Growth',
+      priority: t.priority as any,
+      time: t.due_at 
+        ? new Date(t.due_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) 
+        : idx === 0 ? '09:00 AM' : idx === 1 ? '11:30 AM' : idx === 2 ? '06:30 PM' : '08:45 PM',
+      isPlaceholder: false,
+      taskObject: t
+    }));
   }, [todayTasks]);
 
   // Toggle tasks completion handler
@@ -830,7 +788,7 @@ export const Dashboard: React.FC = () => {
               </div>
 
               <p className="text-[11px] font-bold text-slate-100 leading-relaxed mb-4">
-                "Good morning, Sir. Your productivity is up <span className="text-cyan-400">12%</span> this week. I recommend tackling the PR review first while your focus levels are peak."
+                "Good morning, Sir & Boss. Your productivity is up <span className="text-cyan-400">12%</span> this week. I recommend tackling the PR review first while your focus levels are peak."
               </p>
 
               <button

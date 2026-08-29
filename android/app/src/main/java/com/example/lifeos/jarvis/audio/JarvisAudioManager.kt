@@ -16,10 +16,20 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Callers must not create additional AudioRecord instances while this is running.
  */
 class JarvisAudioManager(
-    private val context: Context
+    context: Context
 ) {
+    private val appContext: Context = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        try {
+            context.createAttributionContext("jarvis_microphone")
+        } catch (_: Exception) {
+            context.applicationContext
+        }
+    } else {
+        context.applicationContext
+    }
+
     fun interface FrameListener {
-        fun onPcm16(frame: ShortArray, length: Int)
+        fun onPcm16(frame: ShortArray, length: Int, rms: Double)
     }
 
     private val running = AtomicBoolean(false)
@@ -31,15 +41,21 @@ class JarvisAudioManager(
     private var ringFilled = 0
     private val ringLock = Any()
 
+    private val router = JarvisAudioRouter(appContext)
+
+    // Audio gain multiplier to boost weak microphone signals for wake-word detection
+    // Set to 1.0x (unity) to prevent distortion, rely on neural engine sensitivity
+    private val audioGain = 1.0f
+
     val isRunning: Boolean get() = running.get()
 
     fun hasMicrophonePermission(): Boolean {
-        return ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+        return ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
     }
 
     @Synchronized
-    fun start(listener: FrameListener) {
+    fun start(stage: String = "WAKEWORD", listener: FrameListener) {
         if (running.get()) return
         if (!hasMicrophonePermission()) {
             throw SecurityException("RECORD_AUDIO permission is not granted")
@@ -56,24 +72,46 @@ class JarvisAudioManager(
         }
 
         val frameSamples = sampleRate * WakeWordConfig.FRAME_MS / 1000
-        val record = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            sampleRate,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            maxOf(minBuf, frameSamples * 4)
-        )
+        
+        val record = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            AudioRecord.Builder()
+                .setContext(appContext) // Crucial for attributionTag
+                .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+                .setAudioFormat(AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                    .build())
+                .setBufferSizeInBytes(maxOf(minBuf, frameSamples * 4))
+                .build()
+        } else {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                sampleRate,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                maxOf(minBuf, frameSamples * 4)
+            )
+        }
+
         if (record.state != AudioRecord.STATE_INITIALIZED) {
             record.release()
             throw IllegalStateException("AudioRecord failed to initialize")
         }
+
+        // Configure input device strictly to Built-in Mic
+        router.configureAudioRecord(record, stage)
+        router.attachRoutingListener(record, stage)
 
         audioRecord = record
         running.set(true)
         ringWrite = 0
         ringFilled = 0
         record.startRecording()
-        JarvisLog.d("JARVIS_AUDIO_STARTED")
+        JarvisLog.d("JARVIS_AUDIO_STARTED", "stage=$stage")
+
+        // Verify actual routed device after recording starts
+        router.verifyInputRoute(record, stage)
 
         captureThread = Thread({
             val buffer = ShortArray(frameSamples)
@@ -88,23 +126,34 @@ class JarvisAudioManager(
                     break
                 }
                 if (read > 0) {
-                    // Diagnostic: Calculate RMS power for volume monitoring
+                    // Apply audio gain to boost weak microphone signals
+                    for (i in 0 until read) {
+                        val amplified = (buffer[i] * audioGain).toInt()
+                        buffer[i] = amplified.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                    }
+                    
+                    var frameSumSquare = 0.0
                     for (i in 0 until read) {
                         val s = buffer[i].toDouble() / 32768.0
-                        sumSquare += s * s
+                        frameSumSquare += s * s
                     }
+                    val frameRms = kotlin.math.sqrt(frameSumSquare / read)
+
+                    // Diagnostic: Global average RMS
+                    sumSquare += frameSumSquare
                     totalSamplesProcessed += read
-                    
-                    // Log RMS level every ~2 seconds
                     if (totalSamplesProcessed >= sampleRate * 2) {
-                        val rms = kotlin.math.sqrt(sumSquare / totalSamplesProcessed)
-                        JarvisLog.d("JARVIS_AUDIO_LEVEL", "RMS=${String.format(java.util.Locale.US, "%.4f", rms)}")
+                        val globalRms = kotlin.math.sqrt(sumSquare / totalSamplesProcessed)
+                        JarvisLog.d("JARVIS_AUDIO_LEVEL", "Global RMS=${String.format(java.util.Locale.US, "%.4f", globalRms)} (Gain=${audioGain}x)")
                         totalSamplesProcessed = 0
                         sumSquare = 0.0
                     }
 
                     appendRing(buffer, read)
-                    listener.onPcm16(buffer, read)
+                    if (totalSamplesProcessed % (sampleRate * 2) == 0L) {
+                        JarvisLog.d("JARVIS_AUDIO_FEED", "feeding frame len=$read to listener")
+                    }
+                    listener.onPcm16(buffer, read, frameRms)
                 } else if (read < 0) {
                     JarvisLog.e("AUDIO_ERROR read=$read")
                     break
@@ -128,6 +177,7 @@ class JarvisAudioManager(
         }
         audioRecord?.release()
         audioRecord = null
+        router.stopMonitoring()
         JarvisLog.d("JARVIS_AUDIO_STOPPED")
     }
 

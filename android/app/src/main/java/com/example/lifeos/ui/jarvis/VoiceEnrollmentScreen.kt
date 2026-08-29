@@ -1,13 +1,13 @@
 package com.example.lifeos.ui.jarvis
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -28,145 +29,274 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.lifeos.jarvis.prefs.JarvisPrefs
+import com.example.lifeos.jarvis.prefs.WakeWordSetupState
 import com.example.lifeos.theme.*
 import com.example.lifeos.ui.components.LifeOSButton
 import com.example.lifeos.ui.components.LifeOSOrb
+import com.example.lifeos.jarvis.audio.toFloatPcm
+import com.example.lifeos.jarvis.audio.JarvisAudioSynthesizer
+import com.example.lifeos.jarvis.service.JarvisWakeWordService
+import com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier
+import com.example.lifeos.jarvis.speaker.SpeakerEmbedding
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import com.example.lifeos.jarvis.audio.toFloatPcm
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun VoiceEnrollmentScreen(
     onFinish: () -> Unit,
+    onSkip: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    var currentStep by remember { mutableStateOf(1) }
+    var currentStep by remember { mutableIntStateOf(1) }
     val context = LocalContext.current
+
+    val handleSkip: () -> Unit = {
+        JarvisPrefs.setWakeWordSetupState(context, WakeWordSetupState.SKIPPED)
+        JarvisPrefs.setListenEnabled(context, false)
+        if (onSkip != null) {
+            onSkip()
+        } else {
+            onFinish()
+        }
+    }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(DarkBg)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         AnimatedContent(
             targetState = currentStep,
             transitionSpec = {
-                fadeIn(animationSpec = tween(500)) togetherWith fadeOut(animationSpec = tween(500))
+                fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400))
             },
-            label = "onboarding_step"
+            label = "enrollment_step"
         ) { step ->
             when (step) {
-                1 -> WakeWordSetupStep(onNext = { currentStep = 2 })
-                2 -> TeachJarvisStep(onNext = { currentStep = 3 })
-                3 -> VoiceVerificationStep(onNext = { currentStep = 4 })
-                4 -> SetupCompleteStep(onFinish = {
-                    JarvisPrefs.setSetupCompleted(context, true)
-                    onFinish()
-                })
+                1 -> WakeWordEnrollmentStep(
+                    onNext = { currentStep = 2 },
+                    onSkip = handleSkip
+                )
+                2 -> WakeWordResultScreen(
+                    onFinish = {
+                        JarvisPrefs.setWakeWordSetupState(context, WakeWordSetupState.COMPLETED)
+                        JarvisPrefs.setListenEnabled(context, true)
+                        
+                        // Automatically start the service
+                        val startIntent = Intent(context, JarvisWakeWordService::class.java).apply {
+                            action = JarvisWakeWordService.ACTION_START
+                        }
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            context.startForegroundService(startIntent)
+                        } else {
+                            context.startService(startIntent)
+                        }
+                        onFinish()
+                    },
+                    onReEnroll = {
+                        currentStep = 1
+                    },
+                    onSkip = handleSkip
+                )
             }
         }
     }
 }
 
 @Composable
-fun WakeWordSetupStep(onNext: () -> Unit) {
+fun WakeWordEnrollmentStep(
+    onNext: () -> Unit,
+    onSkip: (() -> Unit)? = null
+) {
     val context = LocalContext.current
+    var hasPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted) onNext()
+        hasPermission = isGranted
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(60.dp))
-        
-        LifeOSOrb(size = 120.dp, state = "idle")
-        
-        Spacer(Modifier.height(48.dp))
-        
-        Text(
-            text = "JARVIS listens for",
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Medium
-        )
-        
-        Text(
-            text = "\"Hey Jarvis\"",
-            color = AccentViolet,
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(vertical = 8.dp)
-        )
-        
-        Text(
-            text = "To provide a seamless hands-free experience, we need access to your microphone.",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 14.sp,
-            textAlign = TextAlign.Center,
-            lineHeight = 22.sp,
-            modifier = Modifier.padding(horizontal = 20.dp)
-        )
-        
-        Spacer(Modifier.weight(1f))
-        
-        InfoRow(Icons.Default.Lock, "Always private", "Audio stays on your device")
-        InfoRow(Icons.Default.VerifiedUser, "Only you can wake JARVIS", "Secure voice verification")
-        InfoRow(Icons.Default.CloudQueue, "Works in the background", "Optimized for low power")
-        
-        Spacer(Modifier.height(40.dp))
-        
-        LifeOSButton(
-            text = "Grant Microphone Access",
-            onClick = {
-                val permission = Manifest.permission.RECORD_AUDIO
-                if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
-                    onNext()
-                } else {
-                    launcher.launch(permission)
+    LaunchedEffect(Unit) {
+        if (!hasPermission) {
+            launcher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    if (!hasPermission) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = null,
+                tint = AccentViolet,
+                modifier = Modifier.size(72.dp)
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "Jarvis Needs Microphone Access",
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Microphone access is required to set up and use the wake word.",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+            Spacer(modifier = Modifier.height(48.dp))
+            LifeOSButton(
+                text = "Allow Microphone",
+                onClick = { 
+                    launcher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            )
+            if (onSkip != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                TextButton(onClick = onSkip) {
+                    Text("Skip for now", color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
                 }
             }
-        )
+        }
+    } else {
+        EnrollmentCaptureFlow(onNext = onNext, onSkip = onSkip)
     }
 }
 
 @Composable
-fun TeachJarvisStep(onNext: () -> Unit) {
+fun EnrollmentCaptureFlow(
+    onNext: () -> Unit,
+    onSkip: (() -> Unit)? = null
+) {
     val context = LocalContext.current
-    var count by remember { mutableIntStateOf(0) }
+    var sampleCount by remember { mutableIntStateOf(1) }
+    var currentRms by remember { mutableDoubleStateOf(0.0) }
+    var statusText by remember { mutableStateOf("Say: \"Hey Jarvis\"") }
+    var isProcessing by remember { mutableStateOf(false) }
+    var enrollmentState by remember { mutableStateOf(com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.NOT_STARTED) }
     val scope = rememberCoroutineScope()
-    
-    // States for the engine
-    val engine = remember { com.example.lifeos.jarvis.wakeword.SherpaWakeWordEngine(context) }
+
+    val capturedEmbeddings = remember { mutableStateListOf<SpeakerEmbedding>() }
+
+    // Simple VAD logic state variables
+    var isSpeaking by remember { mutableStateOf(false) }
+    var silenceStart by remember { mutableLongStateOf(0L) }
+
     val audioManager = remember { com.example.lifeos.jarvis.audio.JarvisAudioManager(context) }
 
     DisposableEffect(Unit) {
-        engine.initialize()
-        audioManager.start { frame, length ->
-            val hit = engine.process(frame.toFloatPcm(length), com.example.lifeos.jarvis.wakeword.WakeWordConfig.SAMPLE_RATE)
-            if (hit != null) {
-                scope.launch {
-                    if (count < 5) {
-                        count++
+        enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.RECORDING
+        android.util.Log.d("ENROLLMENT", "Starting enrollment audio capture")
+        audioManager.start(stage = "ENROLLMENT") { _, _, rms ->
+            if (isProcessing) return@start
+            currentRms = rms
+            
+            // Diagnostic logging
+            android.util.Log.d("ENROLLMENT", "RMS: $rms, isSpeaking: $isSpeaking, sampleCount: $sampleCount")
+            
+            // Voice Activity Detection: If audio signal crosses threshold, user is speaking
+            // Increased threshold to avoid background noise triggering detection
+            if (rms > 0.01) {
+                if (!isSpeaking) {
+                    android.util.Log.d("ENROLLMENT", "Speech detected (RMS: $rms)")
+                }
+                isSpeaking = true
+                silenceStart = 0L
+            } else if (isSpeaking) {
+                if (silenceStart == 0L) {
+                    silenceStart = System.currentTimeMillis()
+                    android.util.Log.d("ENROLLMENT", "Silence detected, starting timer")
+                }
+                // If the user remains silent for 800ms after speaking, process the sample
+                if (System.currentTimeMillis() - silenceStart > 800) {
+                    android.util.Log.d("ENROLLMENT", "Processing sample after silence")
+                    isProcessing = true
+                    enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.PROCESSING
+                    scope.launch(Dispatchers.Main) {
+                        statusText = "Processing sample..."
+                        JarvisAudioSynthesizer.playLeadGlassTone()
+                        delay(600.milliseconds) // allow tone to complete
+                        
+                        val samples = audioManager.snapshotRecent(16000 * 2) // Last 2 seconds
+                        val rmsCheck = calculateRms(samples)
+                        android.util.Log.d("ENROLLMENT", "Sample RMS check: $rmsCheck, sample size: ${samples.size}")
+                        
+                        if (rmsCheck < 0.0005f) {
+                            android.util.Log.d("ENROLLMENT", "Sample too quiet: $rmsCheck")
+                            enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.FAILED
+                            statusText = "Sample too quiet, try again."
+                            delay(1500)
+                            statusText = "Say: \"Hey Jarvis\""
+                            isSpeaking = false
+                            silenceStart = 0L
+                            isProcessing = false
+                            enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.RECORDING
+                        } else if (samples.size < 12000) {
+                            android.util.Log.d("ENROLLMENT", "Sample too short: ${samples.size}")
+                            enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.FAILED
+                            statusText = "Recording too short, try again."
+                            delay(1500)
+                            statusText = "Say: \"Hey Jarvis\""
+                            isSpeaking = false
+                            silenceStart = 0L
+                            isProcessing = false
+                            enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.RECORDING
+                        } else {
+                            android.util.Log.d("ENROLLMENT", "Sample accepted, extracting embedding")
+                            // Extract ONNX embedding vector on background thread to prevent UI freezing
+                            val embedding = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                JarvisSpeakerVerifier.extractEmbedding(context, samples)
+                            }
+                            capturedEmbeddings.add(embedding)
+                            android.util.Log.d("ENROLLMENT", "Embedding extracted, sample count: $sampleCount")
+                            
+                            if (sampleCount < 5) {
+                                sampleCount++
+                                statusText = "Perfect! Say it again."
+                                delay(1200)
+                                statusText = "Say: \"Hey Jarvis\""
+                                isSpeaking = false
+                                silenceStart = 0L
+                                isProcessing = false
+                                enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.RECORDING
+                            } else {
+                                enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.ENROLLED
+                                statusText = "Saving voice profile..."
+                                android.util.Log.d("ENROLLMENT", "Saving voice profile with ${capturedEmbeddings.size} embeddings")
+                                
+                                // Explicitly stop audio recording BEFORE transitioning to prevent AudioRecord collision
+                                audioManager.stop()
+                                
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                    val finalProfile = JarvisSpeakerVerifier.createProfileFromSamples(capturedEmbeddings)
+                                    JarvisSpeakerVerifier.saveVoiceProfile(context, finalProfile)
+                                }
+                                delay(400)
+                                onNext()
+                            }
+                        }
                     }
                 }
             }
         }
         onDispose {
+            android.util.Log.d("ENROLLMENT", "Stopping enrollment audio capture (onDispose)")
             audioManager.stop()
-            engine.release()
-        }
-    }
-
-    LaunchedEffect(count) {
-        if (count >= 5) {
-            delay(800)
-            onNext()
         }
     }
 
@@ -181,240 +311,103 @@ fun TeachJarvisStep(onNext: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Teach JARVIS", color = Color.White, fontWeight = FontWeight.Bold)
-            IconButton(onClick = { /* Handle Close */ }) {
-                Icon(Icons.Default.Close, null, tint = Color.White.copy(alpha = 0.5f))
+            Text("Set Up Jarvis", color = Color.White, fontWeight = FontWeight.Bold)
+            if (onSkip != null) {
+                Text(
+                    text = "Skip",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    modifier = Modifier.clickable { 
+                        audioManager.stop()
+                        onSkip() 
+                    }
+                )
+            } else {
+                Icon(Icons.Default.Mic, null, tint = AccentCyan, modifier = Modifier.size(20.dp))
             }
         }
-        
-        Spacer(Modifier.weight(1f))
-        
-        Text("Say", color = Color.White.copy(alpha = 0.6f), fontSize = 18.sp)
-        Text(
-            "\"Hey Jarvis\"",
-            color = AccentCyan,
-            fontSize = 36.sp,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(vertical = 12.dp)
-        )
-        
+
         Spacer(Modifier.height(40.dp))
-        
-        LifeOSOrb(size = 200.dp, state = "listening")
-        
-        Spacer(Modifier.weight(1f))
-        
+
         Text(
-            text = "${if (count > 5) 5 else count} / 5",
-            color = Color.White,
-            fontSize = 18.sp,
+            text = "Step $sampleCount of 5",
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 14.sp,
             fontWeight = FontWeight.Bold
         )
-        
+
+        Spacer(Modifier.weight(1f))
+
         Text(
-            text = "Say it clearly with your\nnatural voice",
-            color = Color.White.copy(alpha = 0.4f),
-            fontSize = 14.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 12.dp)
-        )
-        
-        Spacer(Modifier.height(60.dp))
-    }
-}
-
-@Composable
-fun VoiceVerificationStep(onNext: () -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    
-    val phrases = listOf(
-        "My name is Anirudh.",
-        "JARVIS, I use LifeOS every day.",
-        "This is my personal voice profile.",
-        "Let's make LifeOS smarter together.",
-        "Hey Jarvis, what are my tasks today?"
-    )
-    
-    var completedIndex by remember { mutableIntStateOf(0) }
-    val capturedEmbeddings = remember { mutableStateListOf<com.example.lifeos.jarvis.speaker.SpeakerEmbedding>() }
-
-    // Audio states
-    val audioManager = remember { com.example.lifeos.jarvis.audio.JarvisAudioManager(context) }
-    
-    DisposableEffect(Unit) {
-        audioManager.start { frame, length ->
-            // We want to capture audio for the current phrase
-            // In a real implementation, we'd detect silence or use a button
-            // For now, we'll simulate the capture when the user clicks or wait a bit
-        }
-        onDispose { audioManager.stop() }
-    }
-
-    LaunchedEffect(completedIndex) {
-        if (completedIndex >= phrases.size) {
-            // Save the profile
-            val finalProfile = com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier.createProfileFromSamples(capturedEmbeddings)
-            com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier.saveVoiceProfile(context, finalProfile)
-            delay(1000)
-            onNext()
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(28.dp)
-    ) {
-        Text(
-            "Now, let's verify it's you",
+            text = statusText,
             color = Color.White,
             fontSize = 24.sp,
-            fontWeight = FontWeight.Black
-        )
-        Text(
-            "JARVIS will only respond to your voice.",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 14.sp,
-            modifier = Modifier.padding(top = 8.dp, bottom = 32.dp)
-        )
-        
-        phrases.forEachIndexed { index, phrase ->
-            VerificationRow(
-                index = index + 1,
-                text = phrase,
-                status = when {
-                    index < completedIndex -> "done"
-                    index == completedIndex -> "active"
-                    else -> "pending"
-                },
-                onClick = {
-                    if (index == completedIndex) {
-                        // Capture a sample from the audio manager ring buffer
-                        val samples = audioManager.snapshotRecent()
-                        if (samples.isNotEmpty()) {
-                            val embedding = com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier.extractEmbedding(samples)
-                            capturedEmbeddings.add(embedding)
-                            completedIndex++
-                        }
-                    }
-                }
-            )
-            Spacer(Modifier.height(16.dp))
-        }
-        
-        Spacer(Modifier.weight(1f))
-        
-        // Visualizing waveform at the bottom
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("Tap the active phrase after speaking it", color = AccentCyan.copy(alpha = 0.5f), fontSize = 12.sp)
-        }
-    }
-}
-
-@Composable
-fun SetupCompleteStep(onFinish: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.weight(1f))
-        
-        LifeOSOrb(size = 220.dp, state = "success")
-        
-        Spacer(Modifier.height(48.dp))
-        
-        Text(
-            "You're all set!",
-            color = Color.White,
-            fontSize = 32.sp,
-            fontWeight = FontWeight.Black
-        )
-        
-        Text(
-            "Say \"Hey Jarvis\" anytime\nto wake me up.",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 16.sp,
+            fontWeight = FontWeight.Black,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 16.dp)
+            modifier = Modifier.padding(horizontal = 24.dp)
         )
-        
+
+        Spacer(Modifier.height(32.dp))
+
+        LifeOSOrb(size = 180.dp, state = if (currentRms > 0.01 && !isProcessing) "listening" else "idle")
+
         Spacer(Modifier.weight(1f))
-        
-        LifeOSButton(
-            text = "Continue to LifeOS",
-            onClick = onFinish
-        )
-        
-        Spacer(Modifier.height(16.dp))
-    }
-}
 
-@Composable
-fun InfoRow(icon: ImageVector, title: String, sub: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(AccentViolet.copy(alpha = 0.1f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, null, tint = AccentViolet, modifier = Modifier.size(20.dp))
-        }
-        Spacer(Modifier.width(16.dp))
-        Column {
-            Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(sub, color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp)
-        }
-    }
-}
+        SoundWaveVisualizer(rms = currentRms, isListening = !isProcessing)
 
-@Composable
-fun VerificationRow(index: Int, text: String, status: String, onClick: () -> Unit = {}) {
-    val bgColor = if (status == "active") Color.White.copy(alpha = 0.05f) else Color.Transparent
-    val borderColor = if (status == "active") AccentViolet.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.05f)
-    
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(16.dp))
-            .clickable(enabled = status == "active") { onClick() }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .background(Color.White.copy(alpha = 0.1f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(index.toString(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.height(24.dp))
+
         Text(
-            text = text,
-            color = if (status == "pending") Color.White.copy(alpha = 0.3f) else Color.White,
-            fontSize = 14.sp,
-            modifier = Modifier.weight(1f)
+            text = "Speak clearly in your natural voice.",
+            color = Color.White.copy(alpha = 0.4f),
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center
         )
-        if (status == "done") {
-            Icon(Icons.Default.Check, null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
-        } else if (status == "active") {
-            Icon(Icons.Default.Mic, null, tint = AccentViolet, modifier = Modifier.size(18.dp))
+
+        Spacer(Modifier.height(40.dp))
+    }
+}
+
+@Composable
+fun SoundWaveVisualizer(rms: Double, isListening: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val barsCount = 15
+        val random = remember { java.util.Random() }
+        repeat(barsCount) { i ->
+            val factor = if (isListening) (rms * 12).coerceIn(0.08, 1.0) else 0.08
+            val heightAnim by animateDpAsState(
+                targetValue = (factor * (16 + random.nextInt(32))).dp,
+                animationSpec = spring(stiffness = Spring.StiffnessVeryLow),
+                label = "wave_bar_$i"
+            )
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 3.dp)
+                    .width(4.dp)
+                    .height(heightAnim)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(AccentCyan, AccentViolet)
+                        )
+                    )
+            )
         }
     }
 }
+
+private fun calculateRms(samples: ShortArray): Float {
+    var sum = 0.0
+    for (s in samples) {
+        val normalized = s.toDouble() / 32768.0
+        sum += normalized * normalized
+    }
+    return kotlin.math.sqrt(sum / samples.size).toFloat()
+}
+
