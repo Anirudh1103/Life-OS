@@ -274,28 +274,7 @@ object JarvisController {
         _activeSpeakingTimestamp.value = message.timestamp
         _isPaused.value = false
 
-        // Clean suggestion chips & commands
-        val cleanLines = message.content.split("\n")
-            .filter { line ->
-                val trimmed = line.trim()
-                if (trimmed.isEmpty()) return@filter false
-                if (trimmed.startsWith("[COMMAND:")) return@filter false
-                val isChip = trimmed.matches(Regex("^\\[([^\\[\\]]+)\\]$")) && 
-                             !trimmed.startsWith("[ ]") && 
-                             !trimmed.startsWith("[x]")
-                !isChip
-            }
-            .joinToString("\n")
-
-        val cleanText = cleanLines
-            .replace("```", " ")
-            .replace(Regex("""\(ID: [a-f0-9-]+\)"""), "") // Robustly remove task IDs
-            .replace(Regex("(?m)^\\s*[-*+]\\s+"), "")
-            .replace(Regex("(?m)^\\s*\\d+[.)]\\s+"), "")
-            .replace(Regex("(?m)^\\s*[-*]\\s*\\[[ xX]\\]\\s*"), "")
-            .replace(Regex("\\*{1,3}|`|#{1,6}|_"), "")
-            .replace(Regex("\\s+"), " ")
-            .trim()
+        val cleanText = com.example.lifeos.jarvis.util.JarvisTextSanitizer.cleanForSpeech(message.content)
 
         if (cleanText.isBlank()) {
             stopMessage()

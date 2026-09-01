@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase, dbService, type Profile } from '../services/supabase';
 
 interface AuthUser {
@@ -29,59 +29,129 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Load active session
+  const clearStaleAuth = useCallback(() => {
+    // 1. Immediately purge all Supabase & session tokens from localStorage
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') || key.includes('auth-token') || key.includes('session'))) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch (e) {}
+
+    // 2. Clear state immediately so the UI instantly switches
+    setUser(null);
+    setProfile(null);
+
+    // 3. Fire-and-forget silent local signout
+    try {
+      supabase?.auth.signOut({ scope: 'local' }).catch(() => {});
+    } catch (e) {}
+  }, []);
+
+  // Load active session instantly
   useEffect(() => {
     if (isMockEnabled) {
       const mockSession = localStorage.getItem('life_os_mock_session');
       if (mockSession) {
-        const parsed = JSON.parse(mockSession);
-        setUser(parsed);
-        // Load profile
-        dbService.getProfile(parsed.id)
-          .then(setProfile)
-          .catch(err => console.error('Failed to load mock profile', err))
-          .finally(() => setLoading(false));
-      } else {
-        setLoading(false);
+        try {
+          const parsed = JSON.parse(mockSession);
+          setUser(parsed);
+          dbService.getProfile(parsed.id)
+            .then(setProfile)
+            .catch(() => {});
+        } catch (e) {}
       }
+      setLoading(false);
       return;
     }
 
-    // Supabase auth subscription
-    supabase!.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const u: AuthUser = { id: session.user.id, email: session.user.email || '' };
-        setUser(u);
-        dbService.getProfile(session.user.id)
-          .then(setProfile)
-          .catch(err => console.error('Failed to load profile', err))
-          .finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
+    let isMounted = true;
 
-    const { data: { subscription } } = supabase!.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
+    // Fast Supabase auth initialization
+    const initAuth = async () => {
+      try {
+        const { data: { session }, error: sessionError } = await supabase!.auth.getSession();
+        
+        if (sessionError || !session?.user) {
+          if (isMounted) {
+            clearStaleAuth();
+            setLoading(false);
+          }
+          return;
+        }
+
+        // Check if token is expired
+        const isExpired = session.expires_at ? (session.expires_at * 1000 < Date.now() + 30000) : false;
+
+        if (isExpired) {
+          try {
+            const { data: refreshData, error: refreshError } = await supabase!.auth.refreshSession();
+            if (refreshError || !refreshData.session?.user) {
+              if (isMounted) {
+                clearStaleAuth();
+                setLoading(false);
+              }
+              return;
+            }
+            if (isMounted) {
+              const u: AuthUser = { id: refreshData.session.user.id, email: refreshData.session.user.email || '' };
+              setUser(u);
+              setLoading(false);
+              // Fetch profile in background non-blocking
+              dbService.getProfile(u.id).then(p => isMounted && setProfile(p)).catch(() => {});
+            }
+            return;
+          } catch (e) {
+            if (isMounted) {
+              clearStaleAuth();
+              setLoading(false);
+            }
+            return;
+          }
+        }
+
+        // Valid active session: unblock UI immediately!
+        if (isMounted) {
+          const u: AuthUser = { id: session.user.id, email: session.user.email || '' };
+          setUser(u);
+          setLoading(false);
+          // Fetch profile in background
+          dbService.getProfile(session.user.id).then(p => isMounted && setProfile(p)).catch(() => {});
+        }
+      } catch (err) {
+        if (isMounted) {
+          clearStaleAuth();
+          setLoading(false);
+        }
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase!.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        clearStaleAuth();
+        setLoading(false);
+        return;
+      }
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         const u: AuthUser = { id: session.user.id, email: session.user.email || '' };
         setUser(u);
-        try {
-          const prof = await dbService.getProfile(session.user.id);
-          setProfile(prof);
-        } catch (e) {
-          console.error(e);
-        }
-      } else {
-        setUser(null);
-        setProfile(null);
+        setLoading(false);
+        dbService.getProfile(session.user.id).then(p => isMounted && setProfile(p)).catch(() => {});
       }
-      setLoading(false);
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [clearStaleAuth]);
 
   const refreshProfile = async () => {
     if (user) {
@@ -89,7 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const prof = await dbService.getProfile(user.id);
         setProfile(prof);
       } catch (err) {
-        console.error('Failed to refresh profile', err);
+        console.warn('Failed to refresh profile', err);
       }
     }
   };
@@ -98,7 +168,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       if (isMockEnabled) {
-        // Mock success authentication
         if (password.length < 6) {
           throw new Error('Password must be at least 6 characters.');
         }
@@ -108,19 +177,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email,
         };
 
-        // Create profile if not exist
-        const prof = await dbService.getProfile(mockUser.id);
-        if (prof) {
-          setProfile(prof);
-        }
+        const prof = await dbService.getProfile(mockUser.id).catch(() => null);
+        if (prof) setProfile(prof);
 
         localStorage.setItem('life_os_mock_session', JSON.stringify(mockUser));
         setUser(mockUser);
         return;
       }
 
-      const { error } = await supabase!.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase!.auth.signInWithPassword({
+        email: email.trim(),
+        password: password.trim(),
+      });
+
       if (error) throw error;
+
+      if (data?.user) {
+        const u: AuthUser = { id: data.user.id, email: data.user.email || '' };
+        setUser(u);
+        dbService.getProfile(data.user.id).then(setProfile).catch(() => {});
+      }
     } finally {
       setLoading(false);
     }
@@ -140,7 +216,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           display_name: name || 'Anirudh',
         };
 
-        // Create custom mock profile
         const newProfile: Profile = {
           id: mockUser.id,
           display_name: name || 'Anirudh',
@@ -156,8 +231,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const { data, error } = await supabase!.auth.signUp({
-        email,
-        password,
+        email: email.trim(),
+        password: password.trim(),
         options: {
           data: {
             display_name: name || 'Anirudh',
@@ -167,10 +242,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) throw error;
       
-      // Force profile creation wait if session immediate
       if (data?.user) {
-        const mockUser: AuthUser = { id: data.user.id, email: data.user.email || '' };
-        setUser(mockUser);
+        const u: AuthUser = { id: data.user.id, email: data.user.email || '' };
+        setUser(u);
       }
     } finally {
       setLoading(false);
@@ -186,8 +260,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setProfile(null);
         return;
       }
-      const { error } = await supabase!.auth.signOut();
-      if (error) throw error;
+      clearStaleAuth();
     } finally {
       setLoading(false);
     }

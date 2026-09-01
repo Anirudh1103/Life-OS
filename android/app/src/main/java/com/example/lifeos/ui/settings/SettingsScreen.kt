@@ -335,40 +335,35 @@ fun TestWakeWordDialog(onDismiss: () -> Unit) {
     var testResult by remember { mutableStateOf<Pair<Boolean, Float>?>(null) }
     var statusText by remember { mutableStateOf("Listening for \"Hey Jarvis\"...") }
 
-    // Start Wake Word Engine and Audio Manager
-    val engine = remember { com.example.lifeos.jarvis.wakeword.SherpaWakeWordEngine(context) }
-    val audioManager = remember { com.example.lifeos.jarvis.audio.JarvisAudioManager(context) }
+    LaunchedEffect(Unit) {
+        com.example.lifeos.jarvis.wakeword.WakeWordController.startListening(context)
+    }
 
-    DisposableEffect(Unit) {
-        engine.initialize()
-        audioManager.start(stage = "DIAGNOSTICS") { frame, length, rms ->
-            if (testResult != null) return@start
+    LaunchedEffect(Unit) {
+        com.example.lifeos.jarvis.wakeword.WakeWordEventBus.currentRms.collect { rms ->
             currentRms = rms
-            val hit = engine.process(frame.toFloatPcm(length), com.example.lifeos.jarvis.wakeword.WakeWordConfig.SAMPLE_RATE)
-            if (hit != null) {
-                scope.launch(kotlinx.coroutines.Dispatchers.Main) {
-                    statusText = "Wake word detected. Verifying..."
-                    val samples = audioManager.snapshotRecent(16000 * 2)
-                    val profile = com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier.getVoiceProfile(context)
-                    if (profile == null) {
-                        statusText = "No voice profile enrolled!"
-                        testResult = Pair(false, 0f)
-                    } else {
-                        val score = com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier.verifySpeaker(context, samples, profile)
-                        val verified = score >= com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier.DEFAULT_THRESHOLD
-                        testResult = Pair(verified, score)
-                        statusText = if (verified) {
-                            "Voice verified ✓"
-                        } else {
-                            "Voice could not be verified"
-                        }
-                    }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val profile = com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier.getVoiceProfile(context)
+        com.example.lifeos.jarvis.wakeword.WakeWordEventBus.events.collect { hit ->
+            if (testResult != null) return@collect
+            statusText = "Wake word detected. Verifying..."
+            val samples = com.example.lifeos.jarvis.wakeword.WakeWordController.snapshotRecent(16000 * 2)
+            if (profile == null) {
+                statusText = "No voice profile enrolled!"
+                testResult = Pair(false, 0f)
+            } else {
+                val score = com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier.verifySpeaker(context, samples, profile)
+                val verified = score >= com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier.DEFAULT_THRESHOLD
+                testResult = Pair(verified, score)
+                statusText = if (verified) {
+                    "Voice verified ✓"
+                } else {
+                    "Voice could not be verified"
                 }
             }
-        }
-        onDispose {
-            audioManager.stop()
-            engine.release()
         }
     }
 

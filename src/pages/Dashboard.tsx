@@ -5,7 +5,7 @@ import { dbService, type Task, type FitnessRoutineDay } from '../services/supaba
 import { 
   Plus, ChevronRight, X, Check, AlertCircle,
   Clock, Flame, CheckSquare,
-  Briefcase, ShoppingBag, Phone, PlayCircle, PauseCircle, Loader2, TrendingUp
+  Briefcase, ShoppingBag, PlayCircle, PauseCircle, TrendingUp
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { JarvisArcReactor } from '../components/jarvis/JarvisArcReactor';
@@ -56,9 +56,8 @@ export const Dashboard: React.FC = () => {
 
   // Streaks & Finance States
   const [learningStreak, setLearningStreak] = useState({ current: 0, best: 0 });
-
-  // Global loading state
-  const [isLoading, setIsLoading] = useState(true);
+  const [fitnessStreak, setFitnessStreak] = useState({ current: 0, best: 0 });
+  const [workoutSessions, setWorkoutSessions] = useState<any[]>([]);
 
   // Client-side dynamic clock setup (Asia/Kolkata timezone)
   useEffect(() => {
@@ -113,50 +112,52 @@ export const Dashboard: React.FC = () => {
   }, [focusActive, focusTimeLeft]);
 
   // Load user data on mount
-  const loadDashboardData = async (silent = false) => {
+  const loadDashboardData = async (_silent = false) => {
     if (!user) return;
-    if (!silent) setIsLoading(true);
 
     try {
-      // 1. Fetch Learning Streak & Finance Monthly Saved
-      const [streaks, _fitStreak, routines, _workoutSessions, _finAccounts, _finTransactions] = await Promise.all([
-        dbService.getStreaks(user.id),
-        dbService.getFitnessStreak(user.id),
-        dbService.getFitnessRoutines(user.id),
-        dbService.getFitnessWorkoutSessions(user.id),
-        dbService.getFinanceAccounts(user.id),
-        dbService.getFinanceTransactions(user.id)
+      // 1. Fetch Learning Streak, Fitness Streaks, Routines and Workout Sessions
+      const [streaks, fitStreak, routines, fetchedWorkoutSessions] = await Promise.all([
+        dbService.getStreaks(user.id).catch(err => { console.warn('getStreaks:', err); return { current: 0, best: 0 }; }),
+        dbService.getFitnessStreak(user.id).catch(err => { console.warn('getFitnessStreak:', err); return { current: 0, best: 0 }; }),
+        dbService.getFitnessRoutines(user.id).catch(err => { console.warn('getFitnessRoutines:', err); return []; }),
+        dbService.getFitnessWorkoutSessions(user.id).catch(err => { console.warn('getFitnessWorkoutSessions:', err); return []; })
       ]);
 
-      setLearningStreak(streaks);
+      setLearningStreak(streaks || { current: 0, best: 0 });
+      setFitnessStreak(fitStreak || { current: 0, best: 0 });
+      setWorkoutSessions(fetchedWorkoutSessions || []);
 
       // 2. Fetch Tasks (Work & Personal)
       const [personalTasks, workTasks] = await Promise.all([
-        dbService.getTasks(user.id, 'personal'),
-        dbService.getTasks(user.id, 'work')
+        dbService.getTasks(user.id, 'personal').catch(err => { console.warn('getTasks personal:', err); return []; }),
+        dbService.getTasks(user.id, 'work').catch(err => { console.warn('getTasks work:', err); return []; })
       ]);
 
-      const allTasks = [...personalTasks, ...workTasks];
+      const allTasks = [...(personalTasks || []), ...(workTasks || [])];
       setTasks(allTasks);
 
       // 3. Process Active Fitness Routine & Today's Workout
-      const active = routines.find(r => r.status === 'active') || null;
+      const active = (routines || []).find(r => r.status === 'active') || null;
 
       if (active) {
-        const kolkataOptions = { timeZone: 'Asia/Kolkata' };
-        const localDOW = new Date(new Date().toLocaleString('en-US', kolkataOptions)).getDay();
-        
-        const days = await dbService.getFitnessRoutineDays(active.id);
-        const dayPlan = days.find(d => d.day_of_week === localDOW) || null;
-        setTodayWorkout(dayPlan);
+        try {
+          const kolkataOptions = { timeZone: 'Asia/Kolkata' };
+          const localDOW = new Date(new Date().toLocaleString('en-US', kolkataOptions)).getDay();
+          
+          const days = await dbService.getFitnessRoutineDays(active.id).catch(() => []);
+          const dayPlan = (days || []).find(d => d.day_of_week === localDOW) || null;
+          setTodayWorkout(dayPlan);
+        } catch (err) {
+          console.warn('Could not process active routine day:', err);
+          setTodayWorkout(null);
+        }
       } else {
         setTodayWorkout(null);
       }
 
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -384,101 +385,104 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-40 gap-4">
-          <Loader2 className="h-10 w-10 animate-spin text-accent" />
-          <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 animate-pulse">Syncing Control Center</span>
-        </div>
-      ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* LEFT/MAIN DASHBOARD PANELS */}
           <div className="lg:col-span-2 space-y-8 text-left">
             
             {/* CARD: TODAY'S PLAN */}
-            <div className="glass-panel p-6 rounded-3xl border border-border/10 space-y-5 bg-surface/10">
+            <div className="glass-panel p-5 rounded-2xl border border-border/10 space-y-3.5 bg-surface/10">
               
-              <div className="flex items-center justify-between pb-1">
+              <div className="flex items-center justify-between pb-0.5">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-black text-accent uppercase tracking-widest">Today's Plan</span>
                   <span className="bg-accent/15 text-accent text-[9px] font-black px-1.5 py-0.5 rounded-md">
-                    {todayTasks.length || 4}
+                    {todayTasks.length}
                   </span>
                 </div>
                 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                   <button 
                     onClick={() => navigate('/tasks')} 
                     className="text-[10px] font-extrabold uppercase tracking-wider text-text-secondary/50 hover:text-text-primary transition-colors flex items-center gap-0.5"
                   >
-                    <span>View all tasks</span>
+                    <span>View all</span>
                     <ChevronRight className="h-3 w-3" />
                   </button>
                   
                   <button 
                     onClick={() => setIsAddTaskOpen(true)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-[9px] font-black uppercase tracking-wider rounded-xl transition-all shadow-sm"
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-accent hover:bg-accent-hover text-white text-[9px] font-black uppercase tracking-wider rounded-lg transition-all shadow-sm active:scale-95"
                   >
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="h-3 w-3" />
                     <span>Add Task</span>
                   </button>
                 </div>
               </div>
 
-              {/* Tasks List */}
-              <div className="space-y-2.5">
-                {displayPlanItems.map((item) => {
-                  const isHigh = item.priority === 'high';
-                  const isMed = item.priority === 'medium';
-                  const isLow = item.priority === 'low';
-                  
-                  const priorityTagStyles = 
-                    isHigh ? 'text-red-400 bg-red-500/10 border-red-500/10' :
-                    isMed ? 'text-amber-400 bg-amber-500/10 border-amber-500/10' :
-                    isLow ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/10' : '';
+              {/* Tasks List - Compact & Scrollable */}
+              <div className="max-h-[260px] overflow-y-auto pr-1 space-y-2">
+                {displayPlanItems.length === 0 ? (
+                  <div className="py-8 text-center flex flex-col items-center justify-center space-y-1.5 select-none">
+                    <div className="h-8 w-8 rounded-xl bg-accent/10 flex items-center justify-center text-accent mb-1">
+                      <CheckSquare className="h-4 w-4" />
+                    </div>
+                    <p className="text-xs font-bold text-text-primary/80">No tasks planned for today</p>
+                    <p className="text-[9px] text-text-secondary/40">Add a task or assign due dates to see them here</p>
+                  </div>
+                ) : (
+                  displayPlanItems.map((item) => {
+                    const isHigh = item.priority === 'high';
+                    const isMed = item.priority === 'medium';
+                    const isLow = item.priority === 'low';
+                    
+                    const priorityTagStyles = 
+                      isHigh ? 'text-red-400 bg-red-500/10 border-red-500/10' :
+                      isMed ? 'text-amber-400 bg-amber-500/10 border-amber-500/10' :
+                      isLow ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/10' : '';
 
-                  const workspaceColors =
-                    item.workspace === 'work' ? 'border-indigo-400/30 text-indigo-400' : 'border-emerald-400/30 text-emerald-400';
+                    const workspaceColors =
+                      item.workspace === 'work' ? 'border-indigo-400/40 text-indigo-400' : 'border-emerald-400/40 text-emerald-400';
 
-                  return (
-                    <div 
-                      key={item.id} 
-                      className="flex items-start justify-between p-4.5 bg-surface/30 border border-border/10 rounded-2xl group hover:border-border/20 transition-all cursor-pointer"
-                      onClick={() => handleToggleTaskComplete(item.id, item.isPlaceholder, item.taskObject)}
-                    >
-                      <div className="flex items-start gap-4.5">
-                        <button
-                          className={`h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all mt-0.5 ${workspaceColors} group-hover:bg-white/5`}
-                        >
-                          <Check className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
-                        
-                        <div className="space-y-1">
-                          <p className="text-xs font-extrabold text-text-primary group-hover:text-white transition-colors leading-tight">
-                            {item.title}
-                          </p>
-                          <p className="text-[8px] font-bold text-text-secondary/40 uppercase tracking-widest flex items-center gap-1.5">
-                            {item.workspace === 'work' ? '💼' : '🏠'} {item.workspaceLabel}
-                          </p>
+                    return (
+                      <div 
+                        key={item.id} 
+                        className="flex items-center justify-between p-2.5 px-3.5 bg-surface/20 hover:bg-surface/40 border border-border/10 hover:border-accent/25 rounded-xl group transition-all cursor-pointer gap-3"
+                        onClick={() => handleToggleTaskComplete(item.id, item.isPlaceholder, item.taskObject)}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <button
+                            className={`h-4.5 w-4.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${workspaceColors} group-hover:bg-white/5`}
+                          >
+                            <Check className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </button>
+                          
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-text-primary group-hover:text-accent transition-colors leading-tight truncate">
+                              {item.title}
+                            </p>
+                            <p className="text-[8px] font-semibold text-text-secondary/40 uppercase tracking-wider flex items-center gap-1 mt-0.5">
+                              <span>{item.workspace === 'work' ? '💼' : '🏠'}</span>
+                              <span>{item.workspaceLabel}</span>
+                            </p>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-6 shrink-0">
-                        {item.priority !== 'none' && (
-                          <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border tracking-wider ${priorityTagStyles}`}>
-                            {item.priority}
-                          </span>
-                        )}
-                        
-                        <div className="w-16 text-right">
-                          <span className="text-[10px] font-bold text-text-secondary/40">
+                        <div className="flex items-center gap-3 shrink-0">
+                          {item.priority !== 'none' && (
+                            <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded border tracking-wider ${priorityTagStyles}`}>
+                              {item.priority}
+                            </span>
+                          )}
+                          
+                          <span className="text-[9px] font-bold text-text-secondary/40 whitespace-nowrap min-w-[54px] text-right">
                             {item.time}
                           </span>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
 
             </div>
@@ -540,21 +544,7 @@ export const Dashboard: React.FC = () => {
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 
-                {/* 1. Focus Time */}
-                <div className="glass-panel p-4.5 rounded-2xl border border-border/10 space-y-3 bg-surface/10 hover:border-accent/25 transition-all">
-                  <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-xl bg-accent/15 flex items-center justify-center text-accent">
-                      <Clock className="h-4 w-4" />
-                    </div>
-                    <span className="text-[8px] font-bold text-text-secondary/50 uppercase tracking-wider">Focus Time</span>
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-black text-text-primary tracking-tight">3h 24m</h4>
-                    <p className="text-[9px] font-bold text-text-secondary/35 uppercase tracking-widest mt-0.5">Deep Work</p>
-                  </div>
-                </div>
-
-                {/* 2. Tasks Done */}
+                {/* 1. Tasks Done */}
                 <div className="glass-panel p-4.5 rounded-2xl border border-border/10 space-y-3 bg-surface/10 hover:border-emerald-500/25 transition-all">
                   <div className="flex items-center gap-2">
                     <div className="h-7 w-7 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
@@ -564,13 +554,13 @@ export const Dashboard: React.FC = () => {
                   </div>
                   <div>
                     <h4 className="text-lg font-black text-text-primary tracking-tight">
-                      {completedTodayTasks.length || 8} <span className="text-[10px] font-bold text-text-secondary/40">of {tasks.length || 12}</span>
+                      {completedTodayTasks.length} <span className="text-[10px] font-bold text-text-secondary/40">of {todayTasks.length + completedTodayTasks.length}</span>
                     </h4>
                     <p className="text-[9px] font-bold text-text-secondary/35 uppercase tracking-widest mt-0.5">Daily checklist</p>
                   </div>
                 </div>
 
-                {/* 3. Productivity */}
+                {/* 2. Productivity */}
                 <div className="glass-panel p-4.5 rounded-2xl border border-border/10 space-y-3 bg-surface/10 hover:border-amber-500/25 transition-all">
                   <div className="flex items-center gap-2">
                     <div className="h-7 w-7 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400">
@@ -579,24 +569,54 @@ export const Dashboard: React.FC = () => {
                     <span className="text-[8px] font-bold text-text-secondary/50 uppercase tracking-wider">Productivity</span>
                   </div>
                   <div>
-                    <h4 className="text-lg font-black text-text-primary tracking-tight">78%</h4>
-                    <p className="text-[9px] font-black text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded uppercase tracking-wider text-[8px] mt-0.5 inline-block">Excellent</p>
+                    {(() => {
+                      const totalToday = todayTasks.length + completedTodayTasks.length;
+                      const pct = totalToday > 0 ? Math.round((completedTodayTasks.length / totalToday) * 100) : 0;
+                      const label = pct >= 80 ? 'Excellent' : pct >= 50 ? 'Good' : pct > 0 ? 'In Progress' : 'Get Started';
+                      const labelColor = pct >= 80 ? 'text-emerald-400 bg-emerald-500/10' : pct >= 50 ? 'text-amber-400 bg-amber-500/10' : 'text-text-secondary/50 bg-surface-hover/30';
+                      return (
+                        <>
+                          <h4 className="text-lg font-black text-text-primary tracking-tight">{pct}%</h4>
+                          <p className={`text-[9px] font-black ${labelColor} px-1.5 py-0.5 rounded uppercase tracking-wider text-[8px] mt-0.5 inline-block`}>{label}</p>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
-                {/* 4. Streak */}
+                {/* 3. Learning Streak */}
                 <div className="glass-panel p-4.5 rounded-2xl border border-border/10 space-y-3 bg-surface/10 hover:border-red-500/25 transition-all">
                   <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400 animate-pulse">
+                    <div className={`h-7 w-7 rounded-xl bg-red-500/10 flex items-center justify-center text-red-400 ${learningStreak.current > 0 ? 'animate-pulse' : ''}`}>
                       <Flame className="h-4 w-4" />
                     </div>
-                    <span className="text-[8px] font-bold text-text-secondary/50 uppercase tracking-wider">Active Streak</span>
+                    <span className="text-[8px] font-bold text-text-secondary/50 uppercase tracking-wider">Learning Streak</span>
                   </div>
                   <div>
                     <h4 className="text-lg font-black text-text-primary tracking-tight">
-                      {learningStreak.current || 24} <span className="text-[10px] font-bold text-text-secondary/40">days</span>
+                      {learningStreak.current} <span className="text-[10px] font-bold text-text-secondary/40">days</span>
                     </h4>
-                    <p className="text-[9px] font-bold text-text-secondary/35 uppercase tracking-widest mt-0.5">Keep going!</p>
+                    <p className="text-[9px] font-bold text-text-secondary/35 uppercase tracking-widest mt-0.5">
+                      {learningStreak.current > 0 ? 'Keep going!' : 'Start today!'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 4. Fitness Streak */}
+                <div className="glass-panel p-4.5 rounded-2xl border border-border/10 space-y-3 bg-surface/10 hover:border-accent/25 transition-all">
+                  <div className="flex items-center gap-2">
+                    <div className={`h-7 w-7 rounded-xl bg-accent/15 flex items-center justify-center text-accent ${fitnessStreak.current > 0 ? 'animate-pulse' : ''}`}>
+                      <Clock className="h-4 w-4" />
+                    </div>
+                    <span className="text-[8px] font-bold text-text-secondary/50 uppercase tracking-wider">Fitness Streak</span>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-black text-text-primary tracking-tight">
+                      {fitnessStreak.current} <span className="text-[10px] font-bold text-text-secondary/40">days</span>
+                    </h4>
+                    <p className="text-[9px] font-bold text-text-secondary/35 uppercase tracking-widest mt-0.5">
+                      {fitnessStreak.current > 0 ? `Best: ${fitnessStreak.best}` : 'Hit the gym!'}
+                    </p>
                   </div>
                 </div>
 
@@ -681,43 +701,50 @@ export const Dashboard: React.FC = () => {
               </div>
 
               <div className="space-y-3.5">
-                {[
-                  {
-                    title: 'Project Presentation',
-                    time: 'Tomorrow, 10:00 AM',
-                    icon: Briefcase,
-                    color: 'bg-blue-500/10 text-blue-400 border border-blue-500/10'
-                  },
-                  {
-                    title: 'Grocery Shopping',
-                    time: 'Tomorrow, 05:00 PM',
-                    icon: ShoppingBag,
-                    color: 'bg-rose-500/10 text-rose-400 border border-rose-500/10'
-                  },
-                  {
-                    title: 'Call with Mentor',
-                    time: 'Tue, 27 May, 07:00 PM',
-                    icon: Phone,
-                    color: 'bg-amber-500/10 text-amber-400 border border-amber-500/10'
+                {(() => {
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  const upcomingItems = tasks
+                    .filter(t => !t.is_completed && t.due_at && t.due_at.split('T')[0] > todayStr)
+                    .sort((a, b) => (a.due_at || '').localeCompare(b.due_at || ''))
+                    .slice(0, 4);
+
+                  if (upcomingItems.length === 0) {
+                    return (
+                      <div className="py-6 text-center">
+                        <p className="text-[10px] font-bold text-text-secondary/40 uppercase tracking-wider">No upcoming tasks</p>
+                        <p className="text-[9px] text-text-secondary/30 mt-1">Add tasks with due dates to see them here</p>
+                      </div>
+                    );
                   }
-                ].map((item, idx) => {
-                  const Icon = item.icon;
-                  return (
-                    <div key={idx} className="flex items-center gap-3.5 p-1 group cursor-pointer">
-                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${item.color}`}>
-                        <Icon className="h-4 w-4" />
+
+                  return upcomingItems.map((t) => {
+                    const isWork = t.workspace === 'work';
+                    const Icon = isWork ? Briefcase : ShoppingBag;
+                    const color = isWork
+                      ? 'bg-blue-500/10 text-blue-400 border border-blue-500/10'
+                      : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10';
+                    const dueDate = t.due_at ? new Date(t.due_at) : null;
+                    const timeLabel = dueDate
+                      ? dueDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' }) +
+                        ', ' + dueDate.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })
+                      : '';
+                    return (
+                      <div key={t.id} className="flex items-center gap-3.5 p-1 group cursor-pointer">
+                        <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-bold text-text-primary group-hover:text-accent transition-colors leading-tight">
+                            {t.title}
+                          </p>
+                          <p className="text-[9px] font-semibold text-text-secondary/40 mt-0.5">
+                            {timeLabel}
+                          </p>
+                        </div>
                       </div>
-                      <div className="space-y-0.5">
-                        <p className="text-xs font-bold text-text-primary group-hover:text-accent transition-colors leading-tight">
-                          {item.title}
-                        </p>
-                        <p className="text-[9px] font-semibold text-text-secondary/40 mt-0.5">
-                          {item.time}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             </div>
 
@@ -730,27 +757,58 @@ export const Dashboard: React.FC = () => {
                 </button>
               </div>
               <p className="text-[9px] font-extrabold text-text-secondary/40 uppercase tracking-wider -mt-2">
-                Week 21 · {progressWeeksLabel}
+                {progressWeeksLabel}
               </p>
 
-              <div className="space-y-4">
-                {[
-                  { label: 'Tasks Completed', value: '14 / 20', pct: 70, color: 'bg-accent shadow-sm shadow-accent/20' },
-                  { label: 'Study Time', value: '18.5 / 25 h', pct: 74, color: 'bg-emerald-500' },
-                  { label: 'Habits Score', value: '82%', pct: 82, color: 'bg-amber-500' },
-                  { label: 'Focus Sessions', value: '6 / 8', pct: 75, color: 'bg-sky-500' }
-                ].map((bar, idx) => (
-                  <div key={idx} className="space-y-2">
-                    <div className="flex justify-between items-baseline text-[10px] font-bold">
-                      <span className="text-text-primary/75">{bar.label}</span>
-                      <span className="font-extrabold text-text-primary">{bar.value}</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-surface-hover/30 rounded-full overflow-hidden">
-                      <div className={`h-full ${bar.color} rounded-full transition-all duration-300`} style={{ width: `${bar.pct}%` }} />
-                    </div>
+              {(() => {
+                // Compute real weekly stats
+                const now = new Date();
+                const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay() + 1);
+                const weekStartStr = weekStart.toISOString().split('T')[0];
+                const weekEndStr = new Date(weekStart.getTime() + 6 * 86400000).toISOString().split('T')[0];
+
+                const weekTasks = tasks.filter(t => {
+                  const due = t.due_at?.split('T')[0];
+                  const completed = t.completed_at?.split('T')[0];
+                  return (due && due >= weekStartStr && due <= weekEndStr) ||
+                         (completed && completed >= weekStartStr && completed <= weekEndStr) ||
+                         t.is_in_today;
+                });
+                const weekCompleted = weekTasks.filter(t => t.is_completed).length;
+                const weekTotal = weekTasks.length || 1;
+                const tasksPct = Math.round((weekCompleted / weekTotal) * 100);
+
+                // Weekly workouts
+                const weekWorkouts = workoutSessions.filter(s => {
+                  const d = s.completed_at?.split('T')[0];
+                  return d && d >= weekStartStr && d <= weekEndStr && s.status === 'completed';
+                }).length;
+                const workoutGoal = 5;
+                const workoutPct = Math.min(Math.round((weekWorkouts / workoutGoal) * 100), 100);
+
+                const bars = [
+                  { label: 'Tasks Completed', value: `${weekCompleted} / ${weekTasks.length}`, pct: tasksPct, color: 'bg-accent shadow-sm shadow-accent/20' },
+                  { label: 'Learning Streak', value: `${learningStreak.current} days`, pct: Math.min(learningStreak.current * 10, 100), color: 'bg-emerald-500' },
+                  { label: 'Workout Sessions', value: `${weekWorkouts} / ${workoutGoal}`, pct: workoutPct, color: 'bg-amber-500' },
+                  { label: 'Daily Completion', value: `${completedTodayTasks.length} today`, pct: (todayTasks.length + completedTodayTasks.length) > 0 ? Math.round((completedTodayTasks.length / (todayTasks.length + completedTodayTasks.length)) * 100) : 0, color: 'bg-sky-500' }
+                ];
+
+                return (
+                  <div className="space-y-4">
+                    {bars.map((bar, idx) => (
+                      <div key={idx} className="space-y-2">
+                        <div className="flex justify-between items-baseline text-[10px] font-bold">
+                          <span className="text-text-primary/75">{bar.label}</span>
+                          <span className="font-extrabold text-text-primary">{bar.value}</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-surface-hover/30 rounded-full overflow-hidden">
+                          <div className={`h-full ${bar.color} rounded-full transition-all duration-300`} style={{ width: `${bar.pct}%` }} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
 
             {/* CARD: DAILY MOTIVATION */}
@@ -802,7 +860,6 @@ export const Dashboard: React.FC = () => {
           </div>
 
         </div>
-      )}
 
       {/* ========================================================
           MODAL: ADD TASK (Premium & Clean Inline Dialog)

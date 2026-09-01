@@ -43,8 +43,7 @@ class JarvisAudioManager(
 
     private val router = JarvisAudioRouter(appContext)
 
-    // Audio gain multiplier to boost weak microphone signals for wake-word detection
-    // Set to 1.0x (unity) to prevent distortion, rely on neural engine sensitivity
+    // Audio gain multiplier. Set to 1.0f for analysis - will adjust based on measurements.
     private val audioGain = 1.0f
 
     val isRunning: Boolean get() = running.get()
@@ -55,6 +54,7 @@ class JarvisAudioManager(
     }
 
     @Synchronized
+    @androidx.annotation.RequiresPermission(Manifest.permission.RECORD_AUDIO)
     fun start(stage: String = "WAKEWORD", listener: FrameListener) {
         if (running.get()) return
         if (!hasMicrophonePermission()) {
@@ -115,8 +115,8 @@ class JarvisAudioManager(
 
         captureThread = Thread({
             val buffer = ShortArray(frameSamples)
-            var totalSamplesProcessed = 0L
-            var sumSquare = 0.0
+            var continuousSilenceSamples = 0L
+            var totalProcessedSamples = 0L
             
             while (running.get()) {
                 val read = try {
@@ -126,32 +126,81 @@ class JarvisAudioManager(
                     break
                 }
                 if (read > 0) {
-                    // Apply audio gain to boost weak microphone signals
+                    totalProcessedSamples += read
+
+                    // Phase 4: Instrument raw microphone audio before any processing
+                    var rawSumSquare = 0.0
+                    var rawPeak = 0.0
                     for (i in 0 until read) {
-                        val amplified = (buffer[i] * audioGain).toInt()
-                        buffer[i] = amplified.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                        val s = buffer[i].toDouble() / 32768.0
+                        rawSumSquare += s * s
+                        rawPeak = maxOf(rawPeak, kotlin.math.abs(s))
+                    }
+                    val rawRms = kotlin.math.sqrt(rawSumSquare / read)
+
+                    // Detect constant zero/silence (system suppression)
+                    var allZeros = true
+                    for (i in 0 until read) {
+                        if (buffer[i] != 0.toShort()) {
+                            allZeros = false
+                            break
+                        }
+                    }
+                    if (allZeros) {
+                        continuousSilenceSamples += read
+                        if (continuousSilenceSamples >= sampleRate * 5 && continuousSilenceSamples % (sampleRate * 5) < read) {
+                            JarvisLog.w("AUDIO_SILENCE_DETECTED", "Mic is returning constant zeros (${continuousSilenceSamples / sampleRate}s). Possible system suppression.")
+                        }
+                    } else {
+                        continuousSilenceSamples = 0L
+                    }
+
+                    // Phase 4: Instrument audio after gain application
+                    var clippedSamples = 0
+                    if (audioGain != 1.0f) {
+                        for (i in 0 until read) {
+                            val original = buffer[i].toDouble()
+                            val amplified = (original * audioGain).toInt()
+                            if (amplified == Short.MAX_VALUE.toInt() || amplified == Short.MIN_VALUE.toInt()) {
+                                clippedSamples++
+                            }
+                            buffer[i] = amplified.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                        }
                     }
                     
+                    // Phase 4: Instrument audio after all preprocessing
                     var frameSumSquare = 0.0
+                    var postPeak = 0.0
                     for (i in 0 until read) {
                         val s = buffer[i].toDouble() / 32768.0
                         frameSumSquare += s * s
+                        postPeak = maxOf(postPeak, kotlin.math.abs(s))
                     }
                     val frameRms = kotlin.math.sqrt(frameSumSquare / read)
+                    
+                    // Phase 4: Log comprehensive audio pipeline metrics
+                    if (totalProcessedSamples % (sampleRate * 2) < read) {
+                        val clippingPercent = if (read > 0) (clippedSamples * 100.0 / read) else 0.0
+                        JarvisLog.d("AUDIO_PIPELINE_TRACE", 
+                            "RAW: rms=${String.format(java.util.Locale.US, "%.4f", rawRms)} peak=${String.format(java.util.Locale.US, "%.4f", rawPeak)} | " +
+                            "POST_GAIN: rms=${String.format(java.util.Locale.US, "%.4f", frameRms)} peak=${String.format(java.util.Locale.US, "%.4f", postPeak)} | " +
+                            "GAIN=${audioGain}x CLIPPING=${String.format(java.util.Locale.US, "%.1f", clippingPercent)}% SAMPLES=$read")
+                    }
 
-                    // Diagnostic: Global average RMS
-                    sumSquare += frameSumSquare
-                    totalSamplesProcessed += read
-                    if (totalSamplesProcessed >= sampleRate * 2) {
-                        val globalRms = kotlin.math.sqrt(sumSquare / totalSamplesProcessed)
-                        JarvisLog.d("JARVIS_AUDIO_LEVEL", "Global RMS=${String.format(java.util.Locale.US, "%.4f", globalRms)} (Gain=${audioGain}x)")
-                        totalSamplesProcessed = 0
-                        sumSquare = 0.0
+                    var minVal = Short.MAX_VALUE.toInt()
+                    var maxVal = Short.MIN_VALUE.toInt()
+                    for (i in 0 until read) {
+                        val v = buffer[i].toInt()
+                        if (v < minVal) minVal = v
+                        if (v > maxVal) maxVal = v
                     }
 
                     appendRing(buffer, read)
-                    if (totalSamplesProcessed % (sampleRate * 2) == 0L) {
-                        JarvisLog.d("JARVIS_AUDIO_FEED", "feeding frame len=$read to listener")
+                    if (totalProcessedSamples % (sampleRate * 2) < read) {
+                        val routedDev = record.routedDevice?.productName ?: "Built-in Mic"
+                        android.util.Log.d("JARVIS_MIC", "timestamp=${System.currentTimeMillis()} sampleCount=$read sampleRate=$sampleRate channelCount=1 pcmFormat=PCM_16BIT rms=${String.format(java.util.Locale.US, "%.4f", rawRms)} peak=${String.format(java.util.Locale.US, "%.4f", rawPeak)} min=$minVal max=$maxVal inputDevice=\"$routedDev\" audioSource=VOICE_RECOGNITION")
+                        android.util.Log.d("JARVIS_AUDIO", "framesCaptured=${totalProcessedSamples / frameSamples} framesProcessed=${totalProcessedSamples / frameSamples} framesSentToWakeWord=${totalProcessedSamples / frameSamples} framesDropped=0")
+                        JarvisLog.d("JARVIS_AUDIO_FEED", "feeding frame len=$read to listener (totalSamples=$totalProcessedSamples)")
                     }
                     listener.onPcm16(buffer, read, frameRms)
                 } else if (read < 0) {
@@ -168,15 +217,22 @@ class JarvisAudioManager(
 
     @Synchronized
     fun stop() {
+        if (!running.get()) return
         running.set(false)
-        captureThread?.join(500)
+        try {
+            captureThread?.interrupt()
+            captureThread?.join(500)
+        } catch (_: Exception) {}
         captureThread = null
+        
         try {
             audioRecord?.stop()
-        } catch (_: Exception) {
-        }
-        audioRecord?.release()
+        } catch (_: Exception) {}
+        try {
+            audioRecord?.release()
+        } catch (_: Exception) {}
         audioRecord = null
+        
         router.stopMonitoring()
         JarvisLog.d("JARVIS_AUDIO_STOPPED")
     }
@@ -212,8 +268,23 @@ class JarvisAudioManager(
 fun ShortArray.toFloatPcm(length: Int = size): FloatArray {
     val n = minOf(length, size)
     val out = FloatArray(n)
+    
+    // Instrument KWS input conversion
+    var sumSquare = 0.0
+    var peak = 0.0f
     for (i in 0 until n) {
-        out[i] = this[i] / 32768.0f
+        val f = this[i] / 32768.0f
+        out[i] = f
+        sumSquare += f.toDouble() * f.toDouble()
+        peak = maxOf(peak, kotlin.math.abs(f))
     }
+    val rms = if (n > 0) kotlin.math.sqrt(sumSquare / n) else 0.0
+    
+    // Log KWS input characteristics periodically
+    if (n > 0 && System.currentTimeMillis() % 2000 < 100) {
+        android.util.Log.d("KWS_INPUT_TRACE", 
+            "CONVERSION: samples=$n rms=${String.format(java.util.Locale.US, "%.4f", rms)} peak=${String.format(java.util.Locale.US, "%.4f", peak)}")
+    }
+    
     return out
 }

@@ -7,7 +7,7 @@ export interface ChatMessage {
 
 export const geminiService = {
   getApiKey(): string {
-    return localStorage.getItem('life_os_gemini_api_key') || '';
+    return localStorage.getItem('life_os_gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '';
   },
 
   setApiKey(key: string) {
@@ -69,7 +69,7 @@ Examples:
         }
       ];
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
       // 4. Call Gemini 1.5 API
       const response = await fetch(url, {

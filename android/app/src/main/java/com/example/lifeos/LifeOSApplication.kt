@@ -5,8 +5,14 @@ import com.example.lifeos.jarvis.JarvisController
 import com.example.lifeos.jarvis.brain.*
 
 class LifeOSApplication : Application() {
+    companion object {
+        lateinit var instance: LifeOSApplication
+            private set
+    }
+
     override fun onCreate() {
         super.onCreate()
+        instance = this
 
         // Initialize JARVIS Multi-Model Brain with fallbacks
         // API keys are now securely loaded from local.properties via BuildConfig

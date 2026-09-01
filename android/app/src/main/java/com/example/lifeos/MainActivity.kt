@@ -28,6 +28,22 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         
+        // Keep screen awake while LifeOS is in foreground
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Show over lockscreen and wake display when triggered
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+            )
+        }
+
         // Initialize theme state from prefs
         VoiceQueryManager.isDarkTheme.value = com.example.lifeos.jarvis.prefs.JarvisPrefs.isDarkTheme(this)
 
@@ -58,7 +74,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        if (intent?.action == "com.example.lifeos.ACTION_VOICE_QUERY") {
+        if (intent?.action == "com.example.lifeos.ACTION_JARVIS_ACTIVATE") {
+            com.example.lifeos.jarvis.navigation.JarvisNavigationManager.openJarvisChat()
+        } else if (intent?.action == "com.example.lifeos.ACTION_VOICE_QUERY") {
             val query = intent.getStringExtra("query")
             if (query != null) {
                 VoiceQueryManager.queryFlow.value = query

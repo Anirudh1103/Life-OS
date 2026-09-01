@@ -37,7 +37,7 @@ object JarvisPrefs {
     private const val KEY_DARK_THEME = "dark_theme_enabled"
     private const val KEY_WAKE_WORD_STATUS = "wake_word_status"
 
-    /** Default: do not listen until the user explicitly enables JARVIS. */
+    /** Default: disabled until wakeword setup is completed by user */
     const val DEFAULT_LISTEN_ENABLED = false
 
     /**

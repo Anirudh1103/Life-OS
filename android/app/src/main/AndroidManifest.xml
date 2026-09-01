@@ -7,13 +7,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.INTERNET" /> <!-- Needed by Picovoice access key validation -->
+    <uses-permission android:name="android.permission.INTERNET" /> <!-- Needed for LLM APIs, ElevenLabs TTS, and Cloud Sync -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> <!-- Needed for Android 13+ notifications -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" /> <!-- Needed for overlay pill -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".LifeOSApplication"
@@ -29,6 +30,8 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
             android:theme="@style/Theme.App.Starting"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
@@ -41,7 +44,12 @@
             android:name=".jarvis.service.JarvisWakeWordService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+            android:stopWithTask="false"
+            android:foregroundServiceType="microphone">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
+        </service>
 
         <receiver android:name=".jarvis.reminder.CalendarReminderReceiver" android:exported="true">
             <intent-filter>

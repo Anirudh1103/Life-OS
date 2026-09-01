@@ -110,7 +110,7 @@ fun MainNavigation(
         launchReady = true
     }
 
-    LaunchedEffect(authState) {
+    LaunchedEffect(authState, isWakeWordSetupDone) {
         val state = authState
         if (state is AuthState.Authenticated) {
             // Migrate temporary voice profile to user-specific profile upon successful login
@@ -140,7 +140,7 @@ fun MainNavigation(
         }
     }
 
-    if (!launchReady) {
+    if (!launchReady || authState is AuthState.Initializing) {
         LifeOSSplash()
     } else if (authState is AuthState.Authenticated && !authenticationAnimationActive) {
         if (!isWakeWordSetupDone) {
@@ -191,6 +191,11 @@ fun AppDrawerContent(authViewModel: AuthViewModel, windowSize: LifeOSWindowSize)
     LaunchedEffect(Unit) {
         JarvisNavigationManager.backEvents.collect {
             backStack.removeLastOrNull()
+        }
+    }
+    LaunchedEffect(Unit) {
+        JarvisNavigationManager.openChatEvents.collect {
+            showJarvisChat = true
         }
     }
 

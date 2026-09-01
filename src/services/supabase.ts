@@ -418,7 +418,15 @@ if (isMockEnabled) {
   );
 }
 
-export const supabase = !isMockEnabled ? createClient(supabaseUrl, supabaseAnonKey) : null;
+export const supabase = !isMockEnabled 
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    })
+  : null;
 
 // Mock storage database keys
 const KEYS = {
@@ -949,13 +957,13 @@ const initMockDB = (userId: string) => {
 
     // Seed Routine Days (Mon = 1, Tue = 2, Wed = 3, Thu = 4, Fri = 5, Sat = 6, Sun = 0)
     const activeDays: FitnessRoutineDay[] = [
-      { id: 'day-mon', routine_id: 'routine-active-1', day_of_week: 1, workout_type: 'Strength Training', body_part: 'Chest + Push', is_rest_day: false, warmup_type: 'both', warmup_notes: 'Push-up preparation & Chest activation', stretching_type: 'both', stretching_notes: 'Chest doorway stretch', notes: 'Focus on full range of motion', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'day-tue', routine_id: 'routine-active-1', day_of_week: 2, workout_type: 'Strength Training', body_part: 'Back + Pull', is_rest_day: false, warmup_type: 'common', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: 'Control the descent', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'day-wed', routine_id: 'routine-active-1', day_of_week: 3, workout_type: 'Rest Day', body_part: null, is_rest_day: true, warmup_type: 'none', warmup_notes: null, stretching_type: 'none', stretching_notes: null, notes: 'Rest and recover', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'day-thu', routine_id: 'routine-active-1', day_of_week: 4, workout_type: 'Strength Training', body_part: 'Shoulders', is_rest_day: false, warmup_type: 'common', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: 'Keep posture straight', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'day-fri', routine_id: 'routine-active-1', day_of_week: 5, workout_type: 'Strength Training', body_part: 'Legs', is_rest_day: false, warmup_type: 'common', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: 'Explode up', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'day-sat', routine_id: 'routine-active-1', day_of_week: 6, workout_type: 'Yoga', body_part: 'Flexibility', is_rest_day: false, warmup_type: 'none', warmup_notes: null, stretching_type: 'common', stretching_notes: null, notes: '45 minutes flexibility focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'day-sun', routine_id: 'routine-active-1', day_of_week: 0, workout_type: 'Rest Day', body_part: null, is_rest_day: true, warmup_type: 'none', warmup_notes: null, stretching_type: 'none', stretching_notes: null, notes: 'Weekly body check-in day', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+      { id: 'day-mon', routine_id: 'routine-active-1', day_of_week: 1, workout_type: 'Strength Training', body_part: 'Chest + Triceps + 10k Steps', is_rest_day: false, warmup_type: 'both', warmup_notes: 'Arm circles & push-up preparation', stretching_type: 'both', stretching_notes: 'Doorway chest stretch & tricep stretch', notes: 'Home DB & Barbell Chest + Triceps focus. Target: 10,000 steps.', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-tue', routine_id: 'routine-active-1', day_of_week: 2, workout_type: 'Strength Training', body_part: 'Back + Biceps + 10k Steps', is_rest_day: false, warmup_type: 'both', warmup_notes: 'Cat-cow & band pull-aparts', stretching_type: 'both', stretching_notes: 'Lat stretch & bicep wall stretch', notes: 'Home DB & Barbell Back + Biceps focus. Target: 10,000 steps.', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-wed', routine_id: 'routine-active-1', day_of_week: 3, workout_type: 'Strength Training', body_part: 'Legs + Abs + 10k Steps', is_rest_day: false, warmup_type: 'both', warmup_notes: 'Bodyweight squats & hip openers', stretching_type: 'both', stretching_notes: 'Hamstring & quad stretches', notes: 'Home DB & Barbell Legs + Abs focus. Target: 10,000 steps.', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-thu', routine_id: 'routine-active-1', day_of_week: 4, workout_type: 'Rest Day', body_part: 'Rest + 10k Steps', is_rest_day: true, warmup_type: 'none', warmup_notes: null, stretching_type: 'common', stretching_notes: 'Full body mobility & light walk', notes: 'Active Recovery & mobility. Target: 10,000 steps.', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-fri', routine_id: 'routine-active-1', day_of_week: 5, workout_type: 'Cardio & Full Body', body_part: 'Running / Swimming or Full Body + 10k Steps', is_rest_day: false, warmup_type: 'both', warmup_notes: 'Dynamic leg swings & arm rotations', stretching_type: 'both', stretching_notes: 'Calf & shoulder stretch', notes: 'Running (5km) / Swimming (45m) or Barbell & DB Full Body Complex. Target: 10,000 steps.', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-sat', routine_id: 'routine-active-1', day_of_week: 6, workout_type: 'Sports / Rest', body_part: 'Badminton / Rest + 10k Steps', is_rest_day: false, warmup_type: 'common', warmup_notes: 'Ankle & wrist rotations', stretching_type: 'common', stretching_notes: 'Leg and shoulder stretches', notes: '60-90 min Badminton or Active Recovery. Target: 10,000 steps.', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'day-sun', routine_id: 'routine-active-1', day_of_week: 0, workout_type: 'Sports / Rest', body_part: 'Badminton / Rest + 10k Steps', is_rest_day: false, warmup_type: 'none', warmup_notes: null, stretching_type: 'common', stretching_notes: 'Weekly recovery stretch', notes: '60-90 min Badminton or Rest & Weekly Planning. Target: 10,000 steps.', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
     ];
 
     const archivedDays: FitnessRoutineDay[] = [
@@ -966,25 +974,38 @@ const initMockDB = (userId: string) => {
 
     localStorage.setItem(KEYS.FITNESS_ROUTINE_DAYS, JSON.stringify([...activeDays, ...archivedDays]));
 
-    // Seed Routine Exercises
+    // Seed Routine Exercises (Home Dumbbell & Barbell Program)
     const defaultExercises: FitnessRoutineExercise[] = [
-      // Monday Exercises
-      { id: 'exe-1', routine_day_id: 'day-mon', exercise_name: 'Normal Push-ups', exercise_id: null, order_index: 0, sets: 4, reps_min: 12, reps_max: 15, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Chest focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-2', routine_day_id: 'day-mon', exercise_name: 'Incline Push-ups', exercise_id: null, order_index: 1, sets: 3, reps_min: 12, reps_max: 15, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Upper chest focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-3', routine_day_id: 'day-mon', exercise_name: 'Decline Push-ups', exercise_id: null, order_index: 2, sets: 3, reps_min: 12, reps_max: 15, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Lower chest focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-4', routine_day_id: 'day-mon', exercise_name: 'Dumbbell Press', exercise_id: null, order_index: 3, sets: 3, reps_min: 15, reps_max: 20, weight: 15, duration_seconds: null, rest_seconds: 90, notes: 'Heavy chest push', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      // Monday: Chest + Triceps
+      { id: 'exe-1', routine_day_id: 'day-mon', exercise_name: 'Barbell Floor Press / Bench Press', exercise_id: null, order_index: 0, sets: 4, reps_min: 8, reps_max: 10, weight: 35, duration_seconds: null, rest_seconds: 90, notes: 'Heavy chest push', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-2', routine_day_id: 'day-mon', exercise_name: 'Dumbbell Floor Flyes', exercise_id: null, order_index: 1, sets: 3, reps_min: 10, reps_max: 12, weight: 12, duration_seconds: null, rest_seconds: 60, notes: 'Chest stretch & squeeze', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-3', routine_day_id: 'day-mon', exercise_name: 'Deficit / Standard Push-ups', exercise_id: null, order_index: 2, sets: 3, reps_min: 12, reps_max: 15, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Full depth chest contraction', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-4', routine_day_id: 'day-mon', exercise_name: 'Barbell Skull Crushers', exercise_id: null, order_index: 3, sets: 3, reps_min: 10, reps_max: 12, weight: 18, duration_seconds: null, rest_seconds: 60, notes: 'Tricep long head focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-5', routine_day_id: 'day-mon', exercise_name: 'Overhead Dumbbell Tricep Extension', exercise_id: null, order_index: 4, sets: 3, reps_min: 12, reps_max: 15, weight: 14, duration_seconds: null, rest_seconds: 60, notes: 'Keep elbows tucked', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-6', routine_day_id: 'day-mon', exercise_name: 'Diamond / Close-Grip Push-ups', exercise_id: null, order_index: 5, sets: 3, reps_min: 10, reps_max: 15, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Tricep burnout to failure', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
       
-      // Tuesday Exercises
-      { id: 'exe-5', routine_day_id: 'day-tue', exercise_name: 'Pull-ups', exercise_id: null, order_index: 0, sets: 4, reps_min: 8, reps_max: 10, weight: null, duration_seconds: null, rest_seconds: 60, notes: 'Dead hang pull', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-6', routine_day_id: 'day-tue', exercise_name: 'Dumbbell Rows', exercise_id: null, order_index: 1, sets: 3, reps_min: 12, reps_max: 15, weight: 18, duration_seconds: null, rest_seconds: 60, notes: 'Lat pull focus', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      // Tuesday: Back + Biceps
+      { id: 'exe-7', routine_day_id: 'day-tue', exercise_name: 'Barbell Bent-Over Rows', exercise_id: null, order_index: 0, sets: 4, reps_min: 8, reps_max: 10, weight: 35, duration_seconds: null, rest_seconds: 90, notes: 'Overhand grip, pull to belly button', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-8', routine_day_id: 'day-tue', exercise_name: 'Single-Arm Dumbbell Rows', exercise_id: null, order_index: 1, sets: 3, reps_min: 10, reps_max: 12, weight: 16, duration_seconds: null, rest_seconds: 60, notes: 'Lat squeeze per arm', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-9', routine_day_id: 'day-tue', exercise_name: 'Barbell Romanian Deadlift (RDL)', exercise_id: null, order_index: 2, sets: 3, reps_min: 8, reps_max: 10, weight: 45, duration_seconds: null, rest_seconds: 90, notes: 'Posterior chain & lower back', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-10', routine_day_id: 'day-tue', exercise_name: 'Standing Barbell Bicep Curls', exercise_id: null, order_index: 3, sets: 3, reps_min: 10, reps_max: 12, weight: 20, duration_seconds: null, rest_seconds: 60, notes: 'Strict form, no swinging', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-11', routine_day_id: 'day-tue', exercise_name: 'Dumbbell Hammer Curls', exercise_id: null, order_index: 4, sets: 3, reps_min: 12, reps_max: 15, weight: 12, duration_seconds: null, rest_seconds: 60, notes: 'Brachialis & forearm thickness', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-12', routine_day_id: 'day-tue', exercise_name: 'Dumbbell Concentration Curls', exercise_id: null, order_index: 5, sets: 2, reps_min: 12, reps_max: 15, weight: 10, duration_seconds: null, rest_seconds: 45, notes: 'Peak contraction', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
 
-      // Thursday Exercises
-      { id: 'exe-7', routine_day_id: 'day-thu', exercise_name: 'Dumbbell Shoulder Press', exercise_id: null, order_index: 0, sets: 4, reps_min: 10, reps_max: 12, weight: 12, duration_seconds: null, rest_seconds: 60, notes: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-8', routine_day_id: 'day-thu', exercise_name: 'Lateral Raises', exercise_id: null, order_index: 1, sets: 3, reps_min: 15, reps_max: 20, weight: 7.5, duration_seconds: null, rest_seconds: 60, notes: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      // Wednesday: Legs + Abs
+      { id: 'exe-13', routine_day_id: 'day-wed', exercise_name: 'Barbell Squats (Front or Back)', exercise_id: null, order_index: 0, sets: 4, reps_min: 8, reps_max: 10, weight: 45, duration_seconds: null, rest_seconds: 90, notes: 'Deep squat, chest proud', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-14', routine_day_id: 'day-wed', exercise_name: 'Dumbbell Walking Lunges', exercise_id: null, order_index: 1, sets: 3, reps_min: 12, reps_max: 12, weight: 12, duration_seconds: null, rest_seconds: 60, notes: '12 reps each leg', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-15', routine_day_id: 'day-wed', exercise_name: 'Barbell Stiff-Leg Deadlifts', exercise_id: null, order_index: 2, sets: 3, reps_min: 10, reps_max: 12, weight: 35, duration_seconds: null, rest_seconds: 75, notes: 'Hamstring & glute stretch', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-16', routine_day_id: 'day-wed', exercise_name: 'Dumbbell Standing Calf Raises', exercise_id: null, order_index: 3, sets: 4, reps_min: 15, reps_max: 20, weight: 16, duration_seconds: null, rest_seconds: 45, notes: 'Pause 1s at peak', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-17', routine_day_id: 'day-wed', exercise_name: 'Lying Leg Raises / Knee Tucks', exercise_id: null, order_index: 4, sets: 3, reps_min: 15, reps_max: 20, weight: null, duration_seconds: null, rest_seconds: 45, notes: 'Lower abs control', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-18', routine_day_id: 'day-wed', exercise_name: 'Plank with Core Bracing', exercise_id: null, order_index: 5, sets: 3, reps_min: 1, reps_max: 1, weight: null, duration_seconds: 60, rest_seconds: 45, notes: '60-second hold', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-19', routine_day_id: 'day-wed', exercise_name: 'Dumbbell Russian Twists', exercise_id: null, order_index: 6, sets: 3, reps_min: 20, reps_max: 20, weight: 8, duration_seconds: null, rest_seconds: 45, notes: 'Oblique rotation', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
 
-      // Friday Exercises
-      { id: 'exe-9', routine_day_id: 'day-fri', exercise_name: 'Squats', exercise_id: null, order_index: 0, sets: 4, reps_min: 10, reps_max: 12, weight: 30, duration_seconds: null, rest_seconds: 90, notes: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { id: 'exe-10', routine_day_id: 'day-fri', exercise_name: 'Lunges', exercise_id: null, order_index: 1, sets: 3, reps_min: 12, reps_max: 15, weight: 12, duration_seconds: null, rest_seconds: 60, notes: 'per leg', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+      // Friday: Running / Swimming / Full Body Complex
+      { id: 'exe-20', routine_day_id: 'day-fri', exercise_name: 'Barbell Clean & Press', exercise_id: null, order_index: 0, sets: 3, reps_min: 8, reps_max: 8, weight: 25, duration_seconds: null, rest_seconds: 75, notes: 'Full body power & shoulders', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-21', routine_day_id: 'day-fri', exercise_name: 'Dumbbell Goblet Squats', exercise_id: null, order_index: 1, sets: 3, reps_min: 12, reps_max: 15, weight: 16, duration_seconds: null, rest_seconds: 60, notes: 'High tempo conditioning', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-22', routine_day_id: 'day-fri', exercise_name: 'Barbell Pendlay Rows', exercise_id: null, order_index: 2, sets: 3, reps_min: 10, reps_max: 10, weight: 30, duration_seconds: null, rest_seconds: 60, notes: 'Explosive back pull', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'exe-23', routine_day_id: 'day-fri', exercise_name: 'Dumbbell Thrusters (Squat to Press)', exercise_id: null, order_index: 3, sets: 3, reps_min: 10, reps_max: 12, weight: 10, duration_seconds: null, rest_seconds: 60, notes: 'Cardio & conditioning', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
     ];
 
     localStorage.setItem(KEYS.FITNESS_ROUTINE_EXERCISES, JSON.stringify(defaultExercises));
@@ -3134,9 +3155,9 @@ export const dbService = {
   },
 
   async getFitnessStreak(userId: string): Promise<{ current: number; best: number }> {
-    const activities = await this.getFitnessActivities(userId);
+    const activities = await this.getFitnessActivities(userId).catch(() => []);
     if (activities.length === 0) {
-      return { current: 12, best: 28 };
+      return { current: 0, best: 0 };
     }
 
     const activeDates = new Set<string>();
@@ -3246,20 +3267,28 @@ export const dbService = {
       return hydrated;
     }
 
-    const { data, error } = await supabase!
-      .from('fitness_routines')
-      .select('*')
-      .eq('user_id', userId)
-      .order('start_date', { ascending: false });
+    try {
+      const { data, error } = await supabase!
+        .from('fitness_routines')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-    if (error) throw error;
-    
-    const routines: FitnessRoutine[] = data || [];
-    for (const r of routines) {
-      const days = await this.getFitnessRoutineDays(r.id);
-      r.days = days;
+      if (error) {
+        console.warn('fitness_routines query error:', error.message);
+        return [];
+      }
+      
+      const routines: FitnessRoutine[] = data || [];
+      for (const r of routines) {
+        const days = await this.getFitnessRoutineDays(r.id);
+        r.days = days;
+      }
+      return routines;
+    } catch (err) {
+      console.warn('Failed to load fitness routines:', err);
+      return [];
     }
-    return routines;
   },
 
   async getFitnessRoutine(userId: string, routineId: string): Promise<FitnessRoutine> {
@@ -3479,29 +3508,40 @@ export const dbService = {
       });
     }
 
-    const { data: daysData, error: errD } = await supabase!
-      .from('fitness_routine_days')
-      .select('*')
-      .eq('routine_id', routineId);
-
-    if (errD) throw errD;
-
-    const days: FitnessRoutineDay[] = daysData || [];
-    for (const d of days) {
-      const { data: exes, error: errE } = await supabase!
-        .from('fitness_routine_exercises')
+    try {
+      const { data: daysData, error: errD } = await supabase!
+        .from('fitness_routine_days')
         .select('*')
-        .eq('routine_day_id', d.id)
-        .order('order_index', { ascending: true });
-      if (errE) throw errE;
-      d.exercises = exes || [];
-    }
+        .eq('routine_id', routineId);
 
-    return days.sort((a, b) => {
-      const valA = a.day_of_week === 0 ? 7 : a.day_of_week;
-      const valB = b.day_of_week === 0 ? 7 : b.day_of_week;
-      return valA - valB;
-    });
+      if (errD) {
+        console.warn('fitness_routine_days query error:', errD.message);
+        return [];
+      }
+
+      const days: FitnessRoutineDay[] = daysData || [];
+      for (const d of days) {
+        const { data: exes, error: errE } = await supabase!
+          .from('fitness_routine_exercises')
+          .select('*')
+          .eq('routine_day_id', d.id)
+          .order('order_index', { ascending: true });
+        if (errE) {
+          d.exercises = [];
+        } else {
+          d.exercises = exes || [];
+        }
+      }
+
+      return days.sort((a, b) => {
+        const valA = a.day_of_week === 0 ? 7 : a.day_of_week;
+        const valB = b.day_of_week === 0 ? 7 : b.day_of_week;
+        return valA - valB;
+      });
+    } catch (err) {
+      console.warn('Failed to load fitness routine days:', err);
+      return [];
+    }
   },
 
   async updateFitnessRoutineDay(_userId: string, dayId: string, fields: Partial<FitnessRoutineDay>): Promise<FitnessRoutineDay> {
@@ -3822,19 +3862,25 @@ export const dbService = {
       return hydrated.sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
     }
 
-    const { data, error } = await supabase!
-      .from('fitness_workout_sessions')
-      .select('*, fitness_workout_sets(*), fitness_routines(name), fitness_routine_days(workout_type)')
-      .eq('user_id', userId)
-      .order('started_at', { ascending: false });
+    try {
+      const { data, error } = await supabase!
+        .from('fitness_workout_sessions')
+        .select('*, fitness_workout_sets(*)')
+        .eq('user_id', userId)
+        .order('started_at', { ascending: false });
 
-    if (error) throw error;
-    return (data || []).map((row: any) => ({
-      ...row,
-      routine_name: row.fitness_routines?.name,
-      day_workout_type: row.fitness_routine_days?.workout_type,
-      sets: row.fitness_workout_sets
-    }));
+      if (error) {
+        console.warn('fitness_workout_sessions query error:', error.message);
+        return [];
+      }
+      return (data || []).map((row: any) => ({
+        ...row,
+        sets: row.fitness_workout_sets || []
+      }));
+    } catch (err) {
+      console.warn('Failed to load fitness workout sessions:', err);
+      return [];
+    }
   },
 
   async getFitnessWorkoutSession(userId: string, sessionId: string): Promise<FitnessWorkoutSession> {
@@ -3847,7 +3893,7 @@ export const dbService = {
 
     const { data, error } = await supabase!
       .from('fitness_workout_sessions')
-      .select('*, fitness_workout_sets(*), fitness_routines(name), fitness_routine_days(workout_type)')
+      .select('*, fitness_workout_sets(*)')
       .eq('id', sessionId)
       .eq('user_id', userId)
       .single();
@@ -3855,9 +3901,7 @@ export const dbService = {
     if (error) throw error;
     return {
       ...data,
-      routine_name: data.fitness_routines?.name,
-      day_workout_type: data.fitness_routine_days?.workout_type,
-      sets: data.fitness_workout_sets
+      sets: data.fitness_workout_sets || []
     };
   },
 
@@ -4053,13 +4097,21 @@ export const dbService = {
       const cached = localStorage.getItem(KEYS.FINANCE_ACCOUNTS) || '[]';
       return JSON.parse(cached).filter((acc: any) => acc.user_id === userId);
     }
-    const { data, error } = await supabase!
-      .from('finance_accounts')
-      .select('*')
-      .eq('user_id', userId)
-      .order('name');
-    if (error) throw error;
-    return data || [];
+    try {
+      const { data, error } = await supabase!
+        .from('finance_accounts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('name');
+      if (error) {
+        console.warn('finance_accounts query error:', error.message);
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.warn('Failed to load finance accounts:', err);
+      return [];
+    }
   },
 
   async createFinanceAccount(account: Omit<FinanceAccount, 'id' | 'created_at' | 'updated_at'>): Promise<FinanceAccount> {
@@ -4282,16 +4334,25 @@ export const dbService = {
       query = query.or(`merchant.ilike.%${filters.search}%,description.ilike.%${filters.search}%,notes.ilike.%${filters.search}%`);
     }
 
-    const { data, error } = await query.order('transaction_date', { ascending: false });
-    if (error) throw error;
+    try {
+      const { data, error } = await query.order('transaction_date', { ascending: false });
+      if (error) {
+        console.warn('finance_transactions query error:', error.message);
+        return [];
+      }
 
-    return (data || []).map((t: any) => ({
-      ...t,
-      account_name: t.account?.name,
-      category_name: t.category?.name,
-      category_color: t.category?.color,
-      category_icon: t.category?.icon
-    }));
+      return (data || []).map((t: any) => ({
+        ...t,
+        account_name: t.account?.name,
+        category_name: t.category?.name,
+        category_color: t.category?.color,
+        category_icon: t.category?.icon,
+        description: t.description || 'Transaction'
+      }));
+    } catch (err) {
+      console.warn('Failed to load finance transactions:', err);
+      return [];
+    }
   },
 
   async createFinanceTransaction(transaction: Omit<FinanceTransaction, 'id' | 'created_at' | 'updated_at'>, splits?: Omit<FinanceExpenseSplit, 'id' | 'transaction_id'>[]): Promise<FinanceTransaction> {

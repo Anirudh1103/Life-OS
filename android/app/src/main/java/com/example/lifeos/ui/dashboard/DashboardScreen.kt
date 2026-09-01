@@ -66,13 +66,17 @@ fun DashboardScreen(
     val calendarEvents by viewModel.calendarEvents.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val needsJarvisSetup = remember { !JarvisPrefs.isSetupCompleted(context) }
+    var selectedWorkspace by remember { mutableStateOf("personal") }
 
     LaunchedEffect(Unit) {
         viewModel.refresh()
     }
 
-    val displayTasks = remember(tasks) {
-        tasks.filter { t -> t.is_in_today || t.due_at != null }
+    val displayTasks = remember(tasks, selectedWorkspace) {
+        tasks.filter { t ->
+            (t.is_in_today || t.due_at != null) &&
+            (if (selectedWorkspace == "work") t.workspace.equals("work", ignoreCase = true) else !t.workspace.equals("work", ignoreCase = true))
+        }
             .sortedWith(compareBy<Task> { it.is_completed }.thenBy { it.due_at ?: "" })
             .take(6) // Increased for larger screens
     }
@@ -136,18 +140,36 @@ fun DashboardScreen(
                             horizontalArrangement = Arrangement.spacedBy(28.dp)
                         ) {
                             Box(modifier = Modifier.weight(1.5f)) {
-                                PersonalisedTaskList(displayTasks, onNavigate, onToggle = { viewModel.toggleTask(it) })
+                                PersonalisedTaskList(
+                                    tasks = displayTasks,
+                                    selectedWorkspace = selectedWorkspace,
+                                    onWorkspaceChange = { selectedWorkspace = it },
+                                    onNavigate = onNavigate,
+                                    onToggle = { viewModel.toggleTask(it) }
+                                )
                             }
                             Box(modifier = Modifier.weight(1f)) {
-                                JarvisInsightsCard()
+                                JarvisInsightsCard(viewModel)
                             }
                         }
                     } else {
-                        PersonalisedTaskList(displayTasks, onNavigate, onToggle = { viewModel.toggleTask(it) })
+                        PersonalisedTaskList(
+                            tasks = displayTasks,
+                            selectedWorkspace = selectedWorkspace,
+                            onWorkspaceChange = { selectedWorkspace = it },
+                            onNavigate = onNavigate,
+                            onToggle = { viewModel.toggleTask(it) }
+                        )
                     }
                 }
 
+                item {
+                    DashboardNutritionCard(onNavigate = onNavigate)
+                }
+
                 item { QuickActions(onNavigate, windowSize) }
+
+                item { JarvisInsightsCard(viewModel) }
 
                 item { Spacer(Modifier.height(80.dp)) }
             }
@@ -306,7 +328,95 @@ fun GlanceCard(title: String, value: String, sub: String, icon: ImageVector, col
 }
 
 @Composable
-fun PersonalisedTaskList(tasks: List<Task>, onNavigate: (NavKey) -> Unit, onToggle: (Task) -> Unit) {
+fun DashboardWorkspaceToggle(
+    selectedWorkspace: String,
+    onWorkspaceChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+        modifier = modifier.fillMaxWidth().height(38.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(3.dp).fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val isPersonal = selectedWorkspace == "personal"
+            val isWork = selectedWorkspace == "work"
+
+            // Personal Tab
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(if (isPersonal) AccentViolet.copy(alpha = 0.85f) else Color.Transparent)
+                    .clickable { onWorkspaceChange("personal") },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = if (isPersonal) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Personal",
+                        color = if (isPersonal) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        fontSize = 12.sp,
+                        fontWeight = if (isPersonal) FontWeight.Black else FontWeight.SemiBold
+                    )
+                }
+            }
+
+            // Work Tab
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(if (isWork) Color(0xFF00FFC6).copy(alpha = 0.85f) else Color.Transparent)
+                    .clickable { onWorkspaceChange("work") },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Work,
+                        contentDescription = null,
+                        tint = if (isWork) Color.Black else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Work",
+                        color = if (isWork) Color.Black else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        fontSize = 12.sp,
+                        fontWeight = if (isWork) FontWeight.Black else FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PersonalisedTaskList(
+    tasks: List<Task>,
+    selectedWorkspace: String,
+    onWorkspaceChange: (String) -> Unit,
+    onNavigate: (NavKey) -> Unit,
+    onToggle: (Task) -> Unit
+) {
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -319,14 +429,19 @@ fun PersonalisedTaskList(tasks: List<Task>, onNavigate: (NavKey) -> Unit, onTogg
                 color = AccentCyan,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { /* onNavigate(Tasks) */ }
+                modifier = Modifier.clickable { onNavigate(Tasks) }
             )
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+        DashboardWorkspaceToggle(
+            selectedWorkspace = selectedWorkspace,
+            onWorkspaceChange = onWorkspaceChange
+        )
+        Spacer(Modifier.height(12.dp))
         LifeOSCard {
             if (tasks.isEmpty()) {
                 val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
-                Text("No active directives, $title.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f), modifier = Modifier.padding(12.dp))
+                Text("No active ${selectedWorkspace.lowercase()} directives, $title.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f), modifier = Modifier.padding(12.dp))
             } else {
                 tasks.forEachIndexed { index, task ->
                     TaskRow(task, onToggle = { onToggle(task) })
@@ -430,7 +545,9 @@ fun QuickActionItem(label: String, icon: ImageVector, color: Color, modifier: Mo
 }
 
 @Composable
-fun JarvisInsightsCard() {
+fun JarvisInsightsCard(viewModel: DashboardViewModel) {
+    val insight by viewModel.jarvisInsight.collectAsStateWithLifecycle()
+    
     LifeOSCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             LifeOSOrb(size = 40.dp, state = "idle")
@@ -438,9 +555,8 @@ fun JarvisInsightsCard() {
             Text("JARVIS Insights", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(20.dp))
-        val title = if (System.currentTimeMillis() % 2 == 0L) "Sir" else "Boss"
         Text(
-            "$title, you have 2 pending directives and a focus session scheduled for this afternoon. Your streak is strong at 24 days.",
+            insight,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             fontSize = 13.sp,
             lineHeight = 20.sp
@@ -801,6 +917,14 @@ fun LandscapeDashboard(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
                     modifier = Modifier.weight(1.6f).fillMaxHeight()
                 ) {
+                    var selectedWorkspace by remember { mutableStateOf("personal") }
+                    val filteredTasks = remember(tasks, selectedWorkspace) {
+                        tasks.filter { t ->
+                            if (selectedWorkspace == "work") t.workspace.equals("work", ignoreCase = true)
+                            else !t.workspace.equals("work", ignoreCase = true)
+                        }
+                    }
+
                     Column(
                         modifier = Modifier.padding(20.dp),
                         verticalArrangement = Arrangement.SpaceBetween
@@ -819,7 +943,7 @@ fun LandscapeDashboard(
                                             .background(accentViolet.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
-                                        Text("${tasks.size} tasks", color = accentViolet, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        Text("${filteredTasks.size} tasks", color = accentViolet, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                                 Text(
@@ -831,17 +955,24 @@ fun LandscapeDashboard(
                                 )
                             }
                             
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            DashboardWorkspaceToggle(
+                                selectedWorkspace = selectedWorkspace,
+                                onWorkspaceChange = { selectedWorkspace = it }
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
                             
                             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                                 Column(
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.verticalScroll(rememberScrollState())
                                 ) {
-                                    if (tasks.isEmpty()) {
-                                        Text("No pending tasks.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 11.sp)
+                                    if (filteredTasks.isEmpty()) {
+                                        Text("No pending ${selectedWorkspace.lowercase()} tasks.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 11.sp)
                                     } else {
-                                        tasks.forEach { task ->
+                                        filteredTasks.forEach { task ->
                                             CheckboxTaskRow(
                                                 title = task.title,
                                                 priority = if (task.priority == "none") "Low" else task.priority.replaceFirstChar { it.uppercase() },
@@ -1135,96 +1266,11 @@ fun LandscapeDashboard(
                     }
                 }
 
-                // Focus Card
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = cardBackground),
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
-                    modifier = Modifier.weight(1.5f).fillMaxHeight()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Focus", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                Text(
-                                    "View details",
-                                    color = accentCyan,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.clickable { onNavigate(Focus) }
-                                )
-                            }
-                            
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1.2f)) {
-                                    Text("Today's Focus Goal", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                    Text("120 / 180 min", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                    Text("Focused", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), fontSize = 10.sp)
-                                    
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    
-                                    Button(
-                                        onClick = { onNavigate(Focus) },
-                                        colors = ButtonDefaults.buttonColors(containerColor = accentCyan),
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                        modifier = Modifier.height(28.dp)
-                                    ) {
-                                        Text("Start Focus Session", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                                
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.size(54.dp)
-                                ) {
-                                    val focusOutlineColor = MaterialTheme.colorScheme.outline
-                                    Canvas(modifier = Modifier.size(54.dp)) {
-                                        drawCircle(
-                                            color = focusOutlineColor.copy(alpha = 0.05f),
-                                            style = Stroke(width = 4.dp.toPx())
-                                        )
-                                        drawArc(
-                                            color = accentCyan,
-                                            startAngle = -90f,
-                                            sweepAngle = 240f, // 66%
-                                            useCenter = false,
-                                            style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round)
-                                        )
-                                    }
-                                    Text("66%", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                                }
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text("Focus Sessions", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 9.sp)
-                                Text("2", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Column {
-                                Text("Longest Streak", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 9.sp)
-                                Text("5 days", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
+                // Nutrition Card (Separate from Fitness)
+                DashboardNutritionCard(
+                    onNavigate = onNavigate,
+                    modifier = Modifier.weight(1.5f)
+                )
             }
         }
     }
@@ -1444,6 +1490,153 @@ fun BodyHighlightView(workoutType: String) {
                 // Legs area roughly
                 drawRect(color = Color(0xFF00FFC6).copy(alpha = 0.2f), topLeft = androidx.compose.ui.geometry.Offset(center.x - 12.dp.toPx(), center.y + 20.dp.toPx()), size = androidx.compose.ui.geometry.Size(10.dp.toPx(), 25.dp.toPx()))
                 drawRect(color = Color(0xFF00FFC6).copy(alpha = 0.2f), topLeft = androidx.compose.ui.geometry.Offset(center.x + 2.dp.toPx(), center.y + 20.dp.toPx()), size = androidx.compose.ui.geometry.Size(10.dp.toPx(), 25.dp.toPx()))
+            }
+        }
+    }
+}
+
+/**
+ * Dedicated Nutrition Card for Main Dashboard (Separate from Fitness Card)
+ */
+@Composable
+fun DashboardNutritionCard(
+    onNavigate: (NavKey) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val cardBackground = MaterialTheme.colorScheme.surface
+    val accentOrange = Color(0xFFFF8A3D)
+    val accentGreen = Color(0xFF10B981)
+    val accentBlue = Color(0xFF3B82F6)
+    val accentPurple = Color(0xFF8A5DF2)
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = cardBackground),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Restaurant, contentDescription = null, tint = accentOrange, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Nutrition", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Black)
+                    }
+                    Text(
+                        "View details",
+                        color = Color(0xFF2DE1FC),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { onNavigate(Fitness) }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Column {
+                        Text("Today's Intake", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text("1,842", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Black)
+                            Text(" / 2,400 kcal", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 10.sp)
+                        }
+                        Text("558 kcal remaining", color = accentOrange, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = { onNavigate(Fitness) },
+                        colors = ButtonDefaults.buttonColors(containerColor = accentPurple),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(26.dp)
+                    ) {
+                        Icon(Icons.Default.Mic, null, tint = Color.White, modifier = Modifier.size(10.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Log with Jarvis", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 3 Macros Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Protein", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 8.5.sp)
+                        Text("118g", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        LinearProgressIndicator(
+                            progress = { 118f / 150f },
+                            color = accentGreen,
+                            trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Carbs", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 8.5.sp)
+                        Text("210g", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        LinearProgressIndicator(
+                            progress = { 210f / 280f },
+                            color = accentBlue,
+                            trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Fat", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), fontSize = 8.5.sp)
+                        Text("62g", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        LinearProgressIndicator(
+                            progress = { 62f / 80f },
+                            color = accentPurple,
+                            trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                            modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Bottom Meals Chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(
+                    Pair("🍳", "320 kcal"),
+                    Pair("🥗", "780 kcal"),
+                    Pair("🍌", "310 kcal"),
+                    Pair("🍲", "432 kcal")
+                ).forEach { (icon, cals) ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(icon, fontSize = 11.sp)
+                            Spacer(Modifier.width(2.dp))
+                            Text(cals, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
     }

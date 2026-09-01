@@ -24,4 +24,5 @@ class MainScreenViewModelTest {
 
 private class FakeMyModelRepository : DataRepository {
   override val data: Flow<List<String>> = flow { emit(listOf("Sample")) }
+  override fun getDailyAgenda(): String = "Sample Agenda"
 }

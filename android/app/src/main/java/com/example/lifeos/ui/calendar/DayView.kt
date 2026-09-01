@@ -27,11 +27,10 @@ fun DayView(
     onEventClick: (CalendarEvent) -> Unit
 ) {
     val scrollState = rememberScrollState()
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-    val dateStr = dateFormat.format(selectedDate.time)
     
-    val dayEvents = events.filter { it.date == dateStr && !it.is_all_day }
-    val allDayEvents = events.filter { it.date == dateStr && it.is_all_day }
+    // Events are pre-filtered and expanded for 'selectedDate' by the ViewModel
+    val dayEvents = events.filter { !it.is_all_day }
+    val allDayEvents = events.filter { it.is_all_day }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // All Day Section

@@ -6,26 +6,17 @@ package com.example.lifeos.jarvis.wakeword
  * The engine is a constrained neural keyword spotter (not SpeechRecognizer and not
  * `text.contains(...)`). The keyword is the full BPE sequence for "Hey Jarvis":
  *
- *   ▁HE Y ▁JA R V IS
- *
- * That sequence is required in order. Partial phrases such as "Hey" (▁HE Y) or
- * "Jarvis" (▁JA R V IS) do not complete the keyword graph.
+ *   ▁HE Y ▁JA R VI S
  *
  * Sherpa-onnx defaults (see KeywordSpotterConfig):
  * - keywordsScore = 1.5f     (token boosting; higher → easier to trigger)
  * - keywordsThreshold = 0.25f (acoustic threshold; higher → harder to trigger)
- *
- * We bias toward fewer false activations:
- * - Lower boost than the library default
- * - Higher threshold than the library default
- *
- * Do not lower these values to chase quiet-speech recall.
  */
 object WakeWordConfig {
     const val PHRASE = "Hey Jarvis"
     const val KEYWORD_ALIAS = "hey_jarvis"
 
-    const val KEYWORD_BPE = "\u2581HE Y \u2581JA R V I S"
+    const val KEYWORD_BPE = "▁HE Y ▁JA R VI S"
 
     fun keywordLine(): String = "$KEYWORD_BPE @$KEYWORD_ALIAS"
 
@@ -35,14 +26,16 @@ object WakeWordConfig {
     const val FRAME_MS = 100
 
     /**
-     * Token boosting. Standard 3.0f for highly responsive detection.
+     * Token boosting score for sherpa-onnx keyword spotter.
+     * Boosted to 3.0f to ensure high recall on conversational microphone input.
      */
     const val KEYWORDS_SCORE = 3.0f
 
     /**
-     * Detection threshold. Standard 0.05f for maximum sensitivity.
+     * Detection acoustic threshold.
+     * Set to 0.12f for effortless, natural conversational wake-word recognition.
      */
-    const val KEYWORDS_THRESHOLD = 0.05f
+    const val KEYWORDS_THRESHOLD = 0.12f
 
     const val NUM_TRAILING_BLANKS = 2
 

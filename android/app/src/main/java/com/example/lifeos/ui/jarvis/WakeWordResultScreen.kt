@@ -2,8 +2,10 @@ package com.example.lifeos.ui.jarvis
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
+import android.os.Build
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -14,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,10 +37,14 @@ import com.example.lifeos.jarvis.audio.JarvisAudioManager
 import com.example.lifeos.jarvis.audio.JarvisAudioRouter
 import com.example.lifeos.jarvis.audio.JarvisAudioSynthesizer
 import com.example.lifeos.jarvis.audio.toFloatPcm
+import com.example.lifeos.jarvis.prefs.JarvisPrefs
+import com.example.lifeos.jarvis.service.JarvisWakeWordService
 import com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier
 import com.example.lifeos.jarvis.speaker.SpeakerEmbedding
 import com.example.lifeos.jarvis.wakeword.SherpaWakeWordEngine
 import com.example.lifeos.jarvis.wakeword.WakeWordConfig
+import com.example.lifeos.jarvis.wakeword.WakeWordController
+import com.example.lifeos.jarvis.wakeword.WakeWordEventBus
 import com.example.lifeos.theme.*
 import com.example.lifeos.ui.components.LifeOSButton
 import com.example.lifeos.ui.components.LifeOSCard
@@ -81,14 +88,21 @@ fun WakeWordResultScreen(
     // Live Test States
     var isLiveTestActive by remember { mutableStateOf(true) }
     var liveRms by remember { mutableDoubleStateOf(0.0) }
-    var liveTestStatus by remember { mutableStateOf("Say \"Hey Jarvis\" or \"Jarvis\" now to test") }
+    var liveTestStatus by remember { mutableStateOf("Say \"Hey Jarvis\" now to test") }
     var liveKeywordDetected by remember { mutableStateOf<String?>(null) }
     var liveSimilarityScore by remember { mutableStateOf<Float?>(null) }
     var isLiveVerified by remember { mutableStateOf(false) }
     var liveTestError by remember { mutableStateOf<String?>(null) }
+    var isWakewordWorking by remember { mutableStateOf(false) }
 
     // Function to run full diagnostic suite
     fun refreshDiagnostics() {
+        liveKeywordDetected = null
+        liveSimilarityScore = null
+        isLiveVerified = false
+        liveTestError = null
+        isWakewordWorking = false
+        liveTestStatus = "Say \"Hey Jarvis\" now to test"
         scope.launch {
             isRunningDiagnostics = true
             report = withContext(Dispatchers.Default) {
@@ -102,66 +116,47 @@ fun WakeWordResultScreen(
         refreshDiagnostics()
     }
 
-    // Interactive Audio Capture & Wake Word Live Test Runner
-    DisposableEffect(isLiveTestActive) {
-        if (!isLiveTestActive) return@DisposableEffect onDispose {}
+    // Interactive Audio Capture & Wake Word Live Test Runner via WakeWordController
+    LaunchedEffect(isLiveTestActive) {
+        if (!isLiveTestActive) return@LaunchedEffect
+        WakeWordController.startListening(context)
+    }
 
-        val audioManager = JarvisAudioManager(context)
-        val kwsEngine = SherpaWakeWordEngine(context)
-        var isEngineReady = false
-
-        try {
-            kwsEngine.initialize()
-            isEngineReady = true
-        } catch (e: Exception) {
-            liveTestError = "Acoustic engine failed to initialize: ${e.localizedMessage}"
-            android.util.Log.e("WAKEWORD_TEST", "Sherpa initialization error", e)
+    LaunchedEffect(Unit) {
+        WakeWordEventBus.currentRms.collect { rms ->
+            liveRms = rms
         }
+    }
 
+    LaunchedEffect(Unit) {
         val enrolledProfile = JarvisSpeakerVerifier.getVoiceProfile(context)
+        WakeWordEventBus.events.collect { hit ->
+            if (isLiveVerified) return@collect
+            liveKeywordDetected = hit.keyword
+            liveTestStatus = "✅ Wake word spotted: \"${hit.keyword}\"! Verifying voice..."
+            JarvisAudioSynthesizer.playLeadGlassTone()
 
-        try {
-            audioManager.start(stage = "WAKEWORD_TEST") { pcmShorts, sampleRate, rms ->
-                liveRms = rms
-                if (!isEngineReady || isLiveVerified) return@start
-
-                val pcmFloats = pcmShorts.toFloatPcm()
-                val hit = kwsEngine.process(pcmFloats, sampleRate)
-                if (hit != null) {
-                    scope.launch(Dispatchers.Main) {
-                        liveKeywordDetected = hit.keyword
-                        liveTestStatus = "Wake word spotted: \"${hit.keyword}\"! Verifying speaker voice..."
-                        JarvisAudioSynthesizer.playLeadGlassTone()
-
-                        val recentSamples = audioManager.snapshotRecent(16000 * 2) // 2 sec
-                        if (enrolledProfile != null && recentSamples.isNotEmpty()) {
-                            val score = withContext(Dispatchers.Default) {
-                                JarvisSpeakerVerifier.verifySpeaker(context, recentSamples, enrolledProfile)
-                            }
-                            liveSimilarityScore = score
-                            if (score >= JarvisSpeakerVerifier.DEFAULT_THRESHOLD) {
-                                isLiveVerified = true
-                                liveTestStatus = "Neural Link Verified! (Score: ${(score * 100).toInt()}%)"
-                                liveTestError = null
-                            } else {
-                                liveTestStatus = "Keyword spotted, but voice similarity (${(score * 100).toInt()}%) below required ${(JarvisSpeakerVerifier.DEFAULT_THRESHOLD * 100).toInt()}%"
-                                liveTestError = "Voice similarity score did not meet the 55% threshold. Please try speaking at a natural volume."
-                            }
-                        } else {
-                            // If no profile, still show keyword detection success
-                            liveTestStatus = "Wake word spotted: \"${hit.keyword}\" (No profile attached)"
-                        }
-                    }
+            val recentSamples = WakeWordController.snapshotRecent(16000 * 2)
+            if (enrolledProfile != null && recentSamples.isNotEmpty()) {
+                val score = withContext(Dispatchers.Default) {
+                    JarvisSpeakerVerifier.verifySpeaker(context, recentSamples, enrolledProfile)
                 }
+                liveSimilarityScore = score
+                val threshold = JarvisSpeakerVerifier.DEFAULT_THRESHOLD
+                if (score >= threshold) {
+                    isLiveVerified = true
+                    isWakewordWorking = true
+                    liveTestStatus = "✅ Neural Link Verified! (Score: ${(score * 100).toInt()}%)"
+                    liveTestError = null
+                } else {
+                    isWakewordWorking = false
+                    liveTestStatus = "Keyword spotted, but voice similarity (${(score * 100).toInt()}%) below ${(threshold * 100).toInt()}%"
+                    liveTestError = "Voice similarity score did not meet the required threshold. Please speak clearly."
+                }
+            } else {
+                isWakewordWorking = true
+                liveTestStatus = "✅ Wake word working! \"${hit.keyword}\" detected."
             }
-        } catch (e: Exception) {
-            android.util.Log.e("WAKEWORD_TEST", "AudioRecord start failed in test screen", e)
-            liveTestError = "Microphone currently in use or unavailable. Tap 'Re-test Pipeline' to retry."
-        }
-
-        onDispose {
-            try { audioManager.stop() } catch (_: Exception) {}
-            try { kwsEngine.release() } catch (_: Exception) {}
         }
     }
 
@@ -275,6 +270,35 @@ fun WakeWordResultScreen(
                         // Audio Level Waveform
                         SoundWaveVisualizer(rms = liveRms, isListening = isLiveTestActive && !isLiveVerified)
 
+                        // Wakeword Working Status
+                        if (isWakewordWorking) {
+                            Spacer(Modifier.height(12.dp))
+                            Surface(
+                                color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = "Wake word working perfectly!",
+                                        color = Color(0xFF10B981),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
+
                         if (liveKeywordDetected != null || liveSimilarityScore != null) {
                             Spacer(Modifier.height(16.dp))
                             Surface(
@@ -384,7 +408,30 @@ fun WakeWordResultScreen(
                 Spacer(Modifier.height(8.dp))
                 LifeOSButton(
                     text = if (isLiveVerified) "Launch LifeOS Neural Link" else "Proceed to Dashboard",
-                    onClick = onFinish
+                    onClick = {
+                        // CRITICAL: Stop the live test's audio pipeline BEFORE starting the service.
+                        // Two AudioRecord instances on the same mic = one gets silence.
+                        isLiveTestActive = false
+
+                        // Enable wakeword listening when proceeding to dashboard
+                        JarvisPrefs.setListenEnabled(context, true)
+                        JarvisPrefs.setWakeWordSetupState(context, com.example.lifeos.jarvis.prefs.WakeWordSetupState.COMPLETED)
+                        
+                        // Delay service start slightly to ensure the test's AudioRecord is fully released
+                        scope.launch {
+                            delay(300)
+                            val startIntent = Intent(context, JarvisWakeWordService::class.java).apply {
+                                action = JarvisWakeWordService.ACTION_START
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(startIntent)
+                            } else {
+                                context.startService(startIntent)
+                            }
+                        }
+                        
+                        onFinish()
+                    }
                 )
             }
 

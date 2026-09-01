@@ -21,8 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -35,12 +35,15 @@ import com.example.lifeos.ui.components.LifeOSButton
 import com.example.lifeos.ui.components.LifeOSOrb
 import com.example.lifeos.jarvis.audio.toFloatPcm
 import com.example.lifeos.jarvis.audio.JarvisAudioSynthesizer
-import com.example.lifeos.jarvis.service.JarvisWakeWordService
 import com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier
 import com.example.lifeos.jarvis.speaker.SpeakerEmbedding
+import com.example.lifeos.jarvis.wakeword.SherpaWakeWordEngine
+import com.example.lifeos.jarvis.wakeword.WakeWordController
+import com.example.lifeos.jarvis.wakeword.WakeWordEventBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
@@ -75,28 +78,22 @@ fun VoiceEnrollmentScreen(
             label = "enrollment_step"
         ) { step ->
             when (step) {
-                1 -> WakeWordEnrollmentStep(
+                1 -> BatteryOptimizationScreen(
                     onNext = { currentStep = 2 },
+                    onSkip = { currentStep = 2 }
+                )
+                2 -> WakeWordEnrollmentStep(
+                    onNext = { currentStep = 3 },
                     onSkip = handleSkip
                 )
-                2 -> WakeWordResultScreen(
+                3 -> WakeWordResultScreen(
                     onFinish = {
                         JarvisPrefs.setWakeWordSetupState(context, WakeWordSetupState.COMPLETED)
                         JarvisPrefs.setListenEnabled(context, true)
-                        
-                        // Automatically start the service
-                        val startIntent = Intent(context, JarvisWakeWordService::class.java).apply {
-                            action = JarvisWakeWordService.ACTION_START
-                        }
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                            context.startForegroundService(startIntent)
-                        } else {
-                            context.startService(startIntent)
-                        }
                         onFinish()
                     },
                     onReEnroll = {
-                        currentStep = 1
+                        currentStep = 2
                     },
                     onSkip = handleSkip
                 )
@@ -187,116 +184,82 @@ fun EnrollmentCaptureFlow(
     var sampleCount by remember { mutableIntStateOf(1) }
     var currentRms by remember { mutableDoubleStateOf(0.0) }
     var statusText by remember { mutableStateOf("Say: \"Hey Jarvis\"") }
+    var heardTokens by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
-    var enrollmentState by remember { mutableStateOf(com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.NOT_STARTED) }
     val scope = rememberCoroutineScope()
 
     val capturedEmbeddings = remember { mutableStateListOf<SpeakerEmbedding>() }
 
-    // Simple VAD logic state variables
-    var isSpeaking by remember { mutableStateOf(false) }
-    var silenceStart by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        WakeWordController.startListening(context)
+    }
 
-    val audioManager = remember { com.example.lifeos.jarvis.audio.JarvisAudioManager(context) }
-
-    DisposableEffect(Unit) {
-        enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.RECORDING
-        android.util.Log.d("ENROLLMENT", "Starting enrollment audio capture")
-        audioManager.start(stage = "ENROLLMENT") { _, _, rms ->
-            if (isProcessing) return@start
-            currentRms = rms
-            
-            // Diagnostic logging
-            android.util.Log.d("ENROLLMENT", "RMS: $rms, isSpeaking: $isSpeaking, sampleCount: $sampleCount")
-            
-            // Voice Activity Detection: If audio signal crosses threshold, user is speaking
-            // Increased threshold to avoid background noise triggering detection
-            if (rms > 0.01) {
-                if (!isSpeaking) {
-                    android.util.Log.d("ENROLLMENT", "Speech detected (RMS: $rms)")
-                }
-                isSpeaking = true
-                silenceStart = 0L
-            } else if (isSpeaking) {
-                if (silenceStart == 0L) {
-                    silenceStart = System.currentTimeMillis()
-                    android.util.Log.d("ENROLLMENT", "Silence detected, starting timer")
-                }
-                // If the user remains silent for 800ms after speaking, process the sample
-                if (System.currentTimeMillis() - silenceStart > 800) {
-                    android.util.Log.d("ENROLLMENT", "Processing sample after silence")
-                    isProcessing = true
-                    enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.PROCESSING
-                    scope.launch(Dispatchers.Main) {
-                        statusText = "Processing sample..."
-                        JarvisAudioSynthesizer.playLeadGlassTone()
-                        delay(600.milliseconds) // allow tone to complete
-                        
-                        val samples = audioManager.snapshotRecent(16000 * 2) // Last 2 seconds
-                        val rmsCheck = calculateRms(samples)
-                        android.util.Log.d("ENROLLMENT", "Sample RMS check: $rmsCheck, sample size: ${samples.size}")
-                        
-                        if (rmsCheck < 0.0005f) {
-                            android.util.Log.d("ENROLLMENT", "Sample too quiet: $rmsCheck")
-                            enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.FAILED
-                            statusText = "Sample too quiet, try again."
-                            delay(1500)
-                            statusText = "Say: \"Hey Jarvis\""
-                            isSpeaking = false
-                            silenceStart = 0L
-                            isProcessing = false
-                            enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.RECORDING
-                        } else if (samples.size < 12000) {
-                            android.util.Log.d("ENROLLMENT", "Sample too short: ${samples.size}")
-                            enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.FAILED
-                            statusText = "Recording too short, try again."
-                            delay(1500)
-                            statusText = "Say: \"Hey Jarvis\""
-                            isSpeaking = false
-                            silenceStart = 0L
-                            isProcessing = false
-                            enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.RECORDING
-                        } else {
-                            android.util.Log.d("ENROLLMENT", "Sample accepted, extracting embedding")
-                            // Extract ONNX embedding vector on background thread to prevent UI freezing
-                            val embedding = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                                JarvisSpeakerVerifier.extractEmbedding(context, samples)
-                            }
-                            capturedEmbeddings.add(embedding)
-                            android.util.Log.d("ENROLLMENT", "Embedding extracted, sample count: $sampleCount")
-                            
-                            if (sampleCount < 5) {
-                                sampleCount++
-                                statusText = "Perfect! Say it again."
-                                delay(1200)
-                                statusText = "Say: \"Hey Jarvis\""
-                                isSpeaking = false
-                                silenceStart = 0L
-                                isProcessing = false
-                                enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.RECORDING
-                            } else {
-                                enrollmentState = com.example.lifeos.jarvis.prefs.VoiceEnrollmentState.ENROLLED
-                                statusText = "Saving voice profile..."
-                                android.util.Log.d("ENROLLMENT", "Saving voice profile with ${capturedEmbeddings.size} embeddings")
-                                
-                                // Explicitly stop audio recording BEFORE transitioning to prevent AudioRecord collision
-                                audioManager.stop()
-                                
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                                    val finalProfile = JarvisSpeakerVerifier.createProfileFromSamples(capturedEmbeddings)
-                                    JarvisSpeakerVerifier.saveVoiceProfile(context, finalProfile)
-                                }
-                                delay(400)
-                                onNext()
-                            }
-                        }
-                    }
-                }
+    LaunchedEffect(Unit) {
+        WakeWordEventBus.currentRms.collect { rms ->
+            if (!isProcessing) {
+                currentRms = rms
             }
         }
-        onDispose {
-            android.util.Log.d("ENROLLMENT", "Stopping enrollment audio capture (onDispose)")
-            audioManager.stop()
+    }
+
+    LaunchedEffect(Unit) {
+        WakeWordEventBus.lastTokens.collect { tokens ->
+            if (!isProcessing && tokens.isNotBlank()) {
+                heardTokens = "heard: ${tokens.replace("▁", "").trim()}"
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        WakeWordEventBus.events.collect { hit ->
+            if (isProcessing) return@collect
+            if (hit.keyword.contains("hey_jarvis", ignoreCase = true)) {
+                android.util.Log.i("JARVIS_ENROLLMENT", "wakeWordCallbackReceived=true keyword=${hit.keyword} step=$sampleCount")
+                isProcessing = true
+                statusText = "Neural Link Established!"
+                heardTokens = "MATCH: ${hit.keyword.uppercase()}"
+                JarvisAudioSynthesizer.playLeadGlassTone()
+                delay(800.milliseconds)
+
+                val fullSamples = WakeWordController.snapshotRecent(16000 * 2)
+                android.util.Log.d("JARVIS_ENROLLMENT", "snapshot_samples=${fullSamples.size}")
+
+                val embedding = withContext(Dispatchers.Default) {
+                    JarvisSpeakerVerifier.extractEmbedding(context, fullSamples)
+                }
+
+                val embeddingNorm = kotlin.math.sqrt(embedding.vector.map { it * it }.sum())
+                android.util.Log.d("JARVIS_ENROLLMENT", "sample=$sampleCount embedding_norm=$embeddingNorm vector_size=${embedding.vector.size}")
+
+                if (embedding.vector.isNotEmpty() && embeddingNorm > 0.05f) {
+                    capturedEmbeddings.add(embedding)
+                    android.util.Log.d("JARVIS_ENROLLMENT", "sampleAccepted=true currentStep=$sampleCount newStep=${sampleCount + 1}")
+
+                    if (sampleCount < 6) {
+                        sampleCount++
+                        statusText = "Excellent. Again, please."
+                        delay(1200)
+                        statusText = "Say: \"Hey Jarvis\""
+                        heardTokens = ""
+                        isProcessing = false
+                    } else {
+                        statusText = "Calibrating voice profile..."
+                        withContext(Dispatchers.Default) {
+                            val finalProfile = JarvisSpeakerVerifier.createProfileFromSamples(capturedEmbeddings)
+                            JarvisSpeakerVerifier.saveVoiceProfile(context, finalProfile)
+                        }
+                        delay(400)
+                        onNext()
+                    }
+                } else {
+                    android.util.Log.w("JARVIS_ENROLLMENT", "sampleRejected=true sample=$sampleCount embedding_norm=$embeddingNorm - POOR AUDIO QUALITY")
+                    statusText = "Audio quality too low. Please try again."
+                    delay(1500)
+                    statusText = "Say: \"Hey Jarvis\""
+                    heardTokens = ""
+                    isProcessing = false
+                }
+            }
         }
     }
 
@@ -318,7 +281,6 @@ fun EnrollmentCaptureFlow(
                     color = Color.White.copy(alpha = 0.6f),
                     fontSize = 13.sp,
                     modifier = Modifier.clickable { 
-                        audioManager.stop()
                         onSkip() 
                     }
                 )
@@ -330,7 +292,7 @@ fun EnrollmentCaptureFlow(
         Spacer(Modifier.height(40.dp))
 
         Text(
-            text = "Step $sampleCount of 5",
+            text = "Step $sampleCount of 6",
             color = Color.White.copy(alpha = 0.5f),
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold
@@ -346,6 +308,17 @@ fun EnrollmentCaptureFlow(
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 24.dp)
         )
+
+        if (heardTokens.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = heardTokens,
+                color = AccentCyan.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold
+            )
+        }
 
         Spacer(Modifier.height(32.dp))
 
@@ -401,13 +374,3 @@ fun SoundWaveVisualizer(rms: Double, isListening: Boolean) {
         }
     }
 }
-
-private fun calculateRms(samples: ShortArray): Float {
-    var sum = 0.0
-    for (s in samples) {
-        val normalized = s.toDouble() / 32768.0
-        sum += normalized * normalized
-    }
-    return kotlin.math.sqrt(sum / samples.size).toFloat()
-}
-

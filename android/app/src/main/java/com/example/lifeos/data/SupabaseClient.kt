@@ -1,6 +1,7 @@
 package com.example.lifeos.data
 
 import com.example.lifeos.BuildConfig
+import com.example.lifeos.LifeOSApplication
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.gotrue.Auth
@@ -19,7 +20,10 @@ object SupabaseProvider {
         supabaseKey = SUPABASE_KEY
     ) {
         install(Postgrest)
-        install(Auth)
+        install(Auth) {
+            alwaysAutoRefresh = true
+            sessionManager = AndroidSessionManager(LifeOSApplication.instance)
+        }
         install(Realtime)
     }
 }

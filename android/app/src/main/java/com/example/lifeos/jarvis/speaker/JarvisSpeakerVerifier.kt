@@ -88,6 +88,11 @@ object JarvisSpeakerVerifier {
             return 0f
         }
 
+        // Enhanced diagnostics for speaker verification
+        val sampleCount = samples.size
+        val durationSec = sampleCount.toFloat() / 16000f
+        Log.d(TAG, "Speaker verification: samples=$sampleCount duration=${String.format("%.2f", durationSec)}s rms=$rms")
+
         val engine = SpeakerEmbeddingEngine(context.applicationContext)
         val queryVector = try {
             engine.embed(samples.toFloatPcm())
@@ -96,7 +101,13 @@ object JarvisSpeakerVerifier {
         }
 
         val similarity = cosineSimilarity(queryVector, enrolled.vector.toFloatArray())
-        Log.d(TAG, "Cosine similarity score: $similarity (Threshold: $DEFAULT_THRESHOLD)")
+        Log.d(TAG, "Cosine similarity score: $similarity (Threshold: $DEFAULT_THRESHOLD) enrolledModel=${enrolled.modelId}")
+        
+        // Additional diagnostic: check embedding quality
+        val queryNorm = kotlin.math.sqrt(queryVector.map { it * it }.sum())
+        val enrolledNorm = kotlin.math.sqrt(enrolled.vector.map { it * it }.sum())
+        Log.d(TAG, "Embedding norms: query=$queryNorm enrolled=$enrolledNorm")
+        
         return similarity
     }
 }

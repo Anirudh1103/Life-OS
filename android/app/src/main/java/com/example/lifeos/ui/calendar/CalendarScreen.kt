@@ -36,7 +36,8 @@ fun CalendarScreen(
 ) {
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val viewMode by viewModel.viewMode.collectAsStateWithLifecycle()
-    val events by viewModel.events.collectAsStateWithLifecycle()
+    val dayEvents by viewModel.currentDayEvents.collectAsStateWithLifecycle()
+    val upcomingEvents by viewModel.upcomingEvents.collectAsStateWithLifecycle()
     val selectedEvent by viewModel.selectedEvent.collectAsStateWithLifecycle()
     
     var showAddDialog by remember { mutableStateOf(false) }
@@ -97,7 +98,7 @@ fun CalendarScreen(
 
             Box(modifier = Modifier.weight(1f)) {
                 when(viewMode) {
-                    CalendarViewMode.DAY -> DayView(selectedDate, events) { viewModel.selectEvent(it) }
+                    CalendarViewMode.DAY -> DayView(selectedDate, dayEvents) { viewModel.selectEvent(it) }
                     else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("View Mode Coming Soon", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f))
                     }
@@ -122,7 +123,7 @@ fun CalendarScreen(
                 } else {
                     Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(32.dp)) {
                         MiniCalendar(selectedDate) { viewModel.setDate(it) }
-                        UpcomingEventsList(events)
+                        UpcomingEventsList(upcomingEvents)
                         QuickAddRow { type -> 
                             // Open add dialog with pre-selected type
                             showAddDialog = true
@@ -135,6 +136,7 @@ fun CalendarScreen(
 
     if (showAddDialog) {
         AddEventDialog(
+            defaultDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(selectedDate.time),
             onDismiss = { showAddDialog = false },
             onConfirm = { event ->
                 viewModel.createEvent(event)
@@ -222,16 +224,20 @@ fun ViewModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddEventDialog(
+    defaultDate: String,
     onDismiss: () -> Unit,
     onConfirm: (CalendarEvent) -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf(CalendarEventType.EVENT) }
+    var type by remember { mutableStateOf(CalendarEventType.MEETING) }
     var isAllDay by remember { mutableStateOf(false) }
     var startTime by remember { mutableStateOf("09:00") }
     var endTime by remember { mutableStateOf("10:00") }
-    var date by remember { mutableStateOf(SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())) }
+    var date by remember { mutableStateOf(defaultDate) }
+    var recurrence by remember { mutableStateOf(RecurrenceType.NONE) }
+    
+    var showRecurrenceMenu by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -247,9 +253,38 @@ fun AddEventDialog(
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AccentCyan)
                 )
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = isAllDay, onCheckedChange = { isAllDay = it })
-                    Text("All Day Event", color = Color.White.copy(alpha = 0.7f))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = isAllDay, onCheckedChange = { isAllDay = it })
+                        Text("All Day", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                    }
+                    
+                    // Recurrence Dropdown
+                    Box {
+                        OutlinedButton(
+                            onClick = { showRecurrenceMenu = true },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+                        ) {
+                            Text(recurrence.name.lowercase().replaceFirstChar { it.uppercase() }, color = AccentCyan, fontSize = 12.sp)
+                            Icon(Icons.Default.ArrowDropDown, null, tint = AccentCyan)
+                        }
+                        DropdownMenu(
+                            expanded = showRecurrenceMenu,
+                            onDismissRequest = { showRecurrenceMenu = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                        ) {
+                            RecurrenceType.entries.forEach { type ->
+                                DropdownMenuItem(
+                                    text = { Text(type.name.lowercase().replaceFirstChar { it.uppercase() }, color = Color.White) },
+                                    onClick = {
+                                        recurrence = type
+                                        showRecurrenceMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
 
                 if (!isAllDay) {
@@ -258,16 +293,25 @@ fun AddEventDialog(
                             value = startTime,
                             onValueChange = { startTime = it },
                             label = { Text("Start (HH:mm)") },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                         )
                         OutlinedTextField(
                             value = endTime,
                             onValueChange = { endTime = it },
                             label = { Text("End (HH:mm)") },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                         )
                     }
                 }
+
+                OutlinedTextField(
+                    value = date,
+                    onValueChange = { date = it },
+                    label = { Text("Date (yyyy-MM-dd)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 OutlinedTextField(
                     value = location,
@@ -280,6 +324,7 @@ fun AddEventDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    if (title.isBlank()) return@Button
                     val event = CalendarEvent(
                         id = UUID.randomUUID().toString(),
                         user_id = "", // Filled by VM
@@ -290,7 +335,7 @@ fun AddEventDialog(
                         end_time = if (isAllDay) null else endTime,
                         is_all_day = isAllDay,
                         location = location,
-                        recurrence = RecurrenceType.NONE
+                        recurrence = recurrence
                     )
                     onConfirm(event)
                 },

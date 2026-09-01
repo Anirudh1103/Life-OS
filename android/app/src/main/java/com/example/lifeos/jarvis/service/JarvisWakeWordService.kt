@@ -1,5 +1,6 @@
 package com.example.lifeos.jarvis.service
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,6 +11,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.lifeos.MainActivity
@@ -20,10 +23,14 @@ import com.example.lifeos.jarvis.audio.toFloatPcm
 import com.example.lifeos.jarvis.command.DeferredJarvisCommandProcessor
 import com.example.lifeos.jarvis.command.JarvisCommandListener
 import com.example.lifeos.jarvis.logging.JarvisLog
+import com.example.lifeos.jarvis.navigation.JarvisNavigationManager
 import com.example.lifeos.jarvis.prefs.JarvisPrefs
 import com.example.lifeos.jarvis.speaker.JarvisSpeakerVerifier
 import com.example.lifeos.jarvis.wakeword.SherpaWakeWordEngine
 import com.example.lifeos.jarvis.wakeword.WakeWordConfig
+import com.example.lifeos.jarvis.wakeword.WakeWordController
+import com.example.lifeos.jarvis.wakeword.WakeWordEventBus
+import com.example.lifeos.jarvis.wakeword.WakeWordHit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -121,9 +128,11 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
     private var commandListener: JarvisCommandListener? = null
     private var recordingJob: Job? = null
     private var isServiceRunning = false
+    private var isDestroying = false
     private var listeningPaused = false
     private var currentSessionId = 0L
     private var currentWakeCycleId = 0L
+    private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
         const val NOTIFICATION_ID = 1001
@@ -143,20 +152,61 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        isDestroying = false
+        
+        Log.d("JARVIS", "JarvisWakeWordService onCreate")
+        
+        // Acquire partial wake lock to keep CPU alive during Doze mode
+        // Without this, the audio capture thread gets suspended and wake word stops working
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LifeOS::JarvisWakeWord").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+        Log.d("JARVIS", "Wake lock acquired")
         
         tts = TextToSpeech(this, this)
         
         createNotificationChannel()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        
+        // Start foreground service immediately for background stability
+        startForegroundWithNotification()
+        
+        Log.d("JARVIS", "Service setup complete")
 
-        // Global response collector - lives for the entire service lifecycle
+        // Central Wake-Word Event Collector
+        serviceScope.launch {
+            com.example.lifeos.jarvis.wakeword.WakeWordEventBus.events.collect { hit ->
+                handleWakeWordHit(hit)
+            }
+        }
+
+        // Global response collector
         serviceScope.launch(Dispatchers.Main) {
             JarvisController.lastResponse.collectLatest { response ->
                 if (response != null && JarvisController.shouldSpeakResponse.value) {
-                    Log.d("JARVIS", "Global collector: Received response to speak: ${response.take(20)}...")
                     showVoicePill()
                     speak(response)
                 }
+            }
+        }
+
+        // State-based notification collector
+        serviceScope.launch(Dispatchers.Main) {
+            JarvisController.state.collectLatest { state ->
+                val notificationText = when (state) {
+                    is JarvisState.ListeningForWakeWord -> "Listening for Hey Jarvis…"
+                    is JarvisState.WakeWordDetected -> "Wake word detected"
+                    is JarvisState.VerifyingSpeaker -> "Verifying speaker..."
+                    is JarvisState.ListeningForCommand -> "Listening for command..."
+                    is JarvisState.Processing -> "Processing..."
+                    is JarvisState.Responding -> "Responding..."
+                    is JarvisState.Error -> "System Error: ${state.message}"
+                    is JarvisState.Disabled -> "Jarvis is offline"
+                    else -> "Starting JARVIS..."
+                }
+                updateNotificationText(notificationText)
             }
         }
     }
@@ -165,6 +215,9 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
         val action = intent?.action
         Log.d("JARVIS", "JarvisWakeWordService onStartCommand action: $action")
+
+        // Ensure foreground service is running for background stability
+        startForegroundWithNotification()
 
         if (action == ACTION_STOP) {
             stopForegroundService()
@@ -186,7 +239,6 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
 
         if (action == ACTION_RESUME_LISTENING) {
             listeningPaused = false
-            startForegroundWithNotification()
             isServiceRunning = true
             startListening()
             return START_STICKY
@@ -198,11 +250,20 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
             return START_STICKY
         }
 
-        // Start Foreground Notification first (Required within 5 seconds of Service start)
-        startForegroundWithNotification()
+        if (action == ACTION_START) {
+            if (isServiceRunning && audioManager?.isRunning == true) {
+                Log.d("JARVIS", "Service already running and listening, skipping restart")
+                updateNotificationText("Listening for Hey Jarvis…")
+                return START_STICKY
+            }
+            isServiceRunning = true
+            JarvisController.updateState(JarvisState.Starting)
+            startListening()
+            return START_STICKY
+        }
 
-        val shouldListen = action == ACTION_START ||
-            (action.isNullOrEmpty() && JarvisPrefs.isListenEnabled(this))
+        // Default start behavior - always start listening if enabled
+        val shouldListen = action.isNullOrEmpty() && JarvisPrefs.isListenEnabled(this)
         if (shouldListen) {
             isServiceRunning = true
             JarvisController.updateState(JarvisState.Starting)
@@ -264,23 +325,51 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
     }
 
     private fun speak(text: String) {
-        Log.d("JARVIS", "Commanded to speak: ${text.take(50)}...")
+        val clean = com.example.lifeos.jarvis.util.JarvisTextSanitizer.cleanForSpeech(text)
+        if (clean.isBlank()) return
+        Log.d("JARVIS", "Commanded to speak: ${clean.take(50)}...")
+        // Reset engine when starting new speech to clear any partial tokens
+        wakeWordEngine?.reset()
+        
+        // Immediate setSpeaking(true) for echo protection
+        JarvisController.setSpeaking(true)
+        
         val apiKey = BuildConfig.ELEVENLABS_API_KEY
         if (!apiKey.isNullOrBlank() && apiKey != "") {
-            speakWithElevenLabs(text)
+            speakWithElevenLabs(clean)
         } else {
-            speakWithSystemTts(text)
+            speakWithSystemTts(clean)
         }
+    }
+
+    private fun stopAllSpeech() {
+        Log.i("JARVIS", "Stopping all system speech (Barge-in requested)")
+        try {
+            mediaPlayer?.stop()
+            mediaPlayer?.reset()
+        } catch (_: Exception) {}
+        
+        try {
+            tts?.stop()
+        } catch (_: Exception) {}
+        
+        JarvisController.stopMessage()
+        JarvisController.setSpeaking(false)
     }
 
     private fun speakWithElevenLabs(text: String) {
         serviceScope.launch {
             try {
                 JarvisController.setSpeaking(true)
+                val requestBody = org.json.JSONObject().apply {
+                    put("text", text)
+                    put("model_id", "eleven_turbo_v2_5")
+                }.toString()
+
                 val response = httpClient.post("https://api.elevenlabs.io/v1/text-to-speech/$JARVIS_VOICE_ID") {
                     header("xi-api-key", BuildConfig.ELEVENLABS_API_KEY)
                     contentType(ContentType.Application.Json)
-                    setBody("""{"text": "$text", "model_id": "eleven_turbo_v2_5"}""")
+                    setBody(requestBody)
                 }
 
                 if (response.status == HttpStatusCode.OK) {
@@ -351,8 +440,16 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
     }
 
     private fun showReminderPill(eventTitle: String) {
-        if (!Settings.canDrawOverlays(this)) return
-        if (reminderOverlayView != null) return
+        if (!Settings.canDrawOverlays(this)) {
+            Log.w("JARVIS", "Cannot show reminder pill: Permission 'Display over other apps' is missing.")
+            return
+        }
+        if (reminderOverlayView != null) {
+            Log.d("JARVIS", "Reminder pill already visible, skipping")
+            return
+        }
+
+        Log.d("JARVIS", "Showing reminder pill for: $eventTitle")
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -364,7 +461,7 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = 100
         }
 
@@ -399,129 +496,61 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
 
     private fun startListening() {
         if (listeningPaused) {
-            JarvisLog.d("JARVIS_LISTENING_PAUSED")
+            Log.d("JARVIS", "startListening: ignored because listening is paused")
             return
         }
         if (!JarvisPrefs.isListenEnabled(this)) {
-            JarvisLog.d("JARVIS_DEACTIVATED", "listening disabled")
-            JarvisController.updateState(JarvisState.Disabled)
-            JarvisController.setAudioPipelineStatus("disabled")
+            Log.d("JARVIS", "startListening: ignored because listening is disabled in prefs")
             return
         }
-
-        val verificationRequired = JarvisSpeakerVerifier.isSpeakerVerificationEnabled(this)
-        if (verificationRequired && JarvisSpeakerVerifier.getVoiceProfile(this) == null) {
-            JarvisLog.w("SPEAKER_VERIFICATION_ENABLED_BUT_NO_PROFILE")
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.w("JARVIS", "startListening: RECORD_AUDIO permission missing")
+            return
         }
-
-        currentSessionId++
-        val activeSession = currentSessionId
-        JarvisLog.d("JARVIS_RUNTIME_STARTING", "sessionId=$activeSession")
-
-        recordingJob?.cancel()
-        commandListener?.stop()
-        recordingJob = serviceScope.launch {
-            try {
-                JarvisController.updateState(JarvisState.Starting)
-                val engine = wakeWordEngine ?: SherpaWakeWordEngine(applicationContext).also {
-                    it.initialize()
-                    wakeWordEngine = it
-                }
-                if (commandListener == null) {
-                    commandListener = JarvisCommandListener(applicationContext)
-                }
-
-                JarvisController.setLoadedPhrases(listOf(WakeWordConfig.PHRASE))
-
-                startWakeWordCapture(engine, activeSession)
-            } catch (e: SecurityException) {
-                JarvisLog.e("JARVIS_MIC_PERMISSION_REQUIRED", e)
-                JarvisController.updateState(
-                    JarvisState.Error(
-                        "Microphone permission is required.",
-                        JarvisState.ErrorAction.OpenSettings
-                    )
-                )
-            } catch (e: Exception) {
-                JarvisLog.e("JARVIS_AUDIO_ERROR", e)
-                JarvisController.updateState(
-                    JarvisState.Error(
-                        "JARVIS couldn't start listening.",
-                        JarvisState.ErrorAction.Retry
-                    )
-                )
+        Log.i("JARVIS", "[JARVIS_WAKEWORD_SERVICE] Starting WakeWordController")
+        
+        // Ensure wake lock is held
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        if (wakeLock == null || !wakeLock!!.isHeld) {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LifeOS::JarvisWakeWord").apply {
+                setReferenceCounted(false)
+                acquire()
             }
+            Log.d("JARVIS", "Wake lock reacquired")
         }
+        
+        WakeWordController.startListening(this)
+        JarvisController.updateState(JarvisState.ListeningForWakeWord)
+        JarvisController.setAudioPipelineStatus("listening")
+        updateNotificationText("Listening for Hey Jarvis…")
     }
 
-    private fun startWakeWordCapture(engine: SherpaWakeWordEngine, sessionId: Long) {
-        stopAudioPipeline()
-        val manager = JarvisAudioManager(applicationContext)
-        audioManager = manager
-        manager.start(stage = "WAKEWORD") { frame, length, _ ->
-            if (sessionId != currentSessionId) return@start
-
-            // Echo suppression: Ignore input audio frames while Jarvis is speaking through TTS
-            if (JarvisController.isSpeaking.value) {
-                return@start
-            }
-
-            val state = JarvisController.state.value
-            if (state !is JarvisState.ListeningForWakeWord && state !is JarvisState.Starting) {
-                return@start
-            }
-            if (state is JarvisState.Starting) {
-                JarvisController.updateState(JarvisState.ListeningForWakeWord)
-                JarvisController.setAudioPipelineStatus("listening")
-                updateNotificationText("Listening for Hey Jarvis…")
-                JarvisLog.d("JARVIS_WAKEWORD_LISTENING")
-            }
-            val hit = engine.process(frame.toFloatPcm(length), WakeWordConfig.SAMPLE_RATE)
-            if (hit != null) {
-                handleWakeWord(manager.snapshotRecent(), hit.confidence, sessionId)
-            }
-        }
-    }
-
-    private fun handleWakeWord(pcm: ShortArray, confidence: Float?, sessionId: Long) {
-        val cycleId = ++currentWakeCycleId
+    private fun handleWakeWordHit(hit: WakeWordHit) {
+        val pcm = WakeWordController.snapshotRecent(16000 * 2)
         serviceScope.launch(Dispatchers.Default) {
-            if (sessionId != currentSessionId || cycleId != currentWakeCycleId) return@launch
-
-            JarvisLog.d("JARVIS_WAKEWORD_DETECTED", "confidence=$confidence cycleId=$cycleId")
-            JarvisController.updateState(JarvisState.WakeWordDetected(confidence))
+            JarvisController.updateState(JarvisState.WakeWordDetected(hit.confidence))
             updateNotificationText("Wake word detected")
 
             val verificationEnabled = JarvisSpeakerVerifier.isSpeakerVerificationEnabled(this@JarvisWakeWordService)
             if (!verificationEnabled) {
-                JarvisLog.w("SPEAKER_VERIFICATION_SKIPPED")
-                if (sessionId == currentSessionId && cycleId == currentWakeCycleId) {
-                    activateJarvis(sessionId)
-                }
+                activateJarvis()
                 return@launch
             }
 
             val enrolled = JarvisSpeakerVerifier.getVoiceProfile(this@JarvisWakeWordService)
             if (enrolled == null) {
-                JarvisLog.d("JARVIS_PROFILE_NOT_FOUND", "missing enrolled voice profile")
                 JarvisController.updateState(JarvisState.ListeningForWakeWord)
                 updateNotificationText("Listening for Hey Jarvis…")
                 return@launch
             }
 
             JarvisController.updateState(JarvisState.VerifyingSpeaker)
-            JarvisLog.d("JARVIS_AUDIO_ROUTE", "stage=SPEAKER_VERIFICATION requested=TYPE_BUILTIN_MIC actual=TYPE_BUILTIN_MIC")
-            JarvisLog.d("JARVIS_SPEAKER_VERIFICATION_STARTED")
-            
             val score = JarvisSpeakerVerifier.verifySpeaker(this@JarvisWakeWordService, pcm, enrolled)
             JarvisController.setLastSpeakerScore(score)
             val isMatch = score >= JarvisSpeakerVerifier.DEFAULT_THRESHOLD
-            JarvisLog.d("JARVIS_SPEAKER_VERIFICATION_RESULT", "match=$isMatch score=$score threshold=${JarvisSpeakerVerifier.DEFAULT_THRESHOLD}")
-            
-            if (sessionId != currentSessionId || cycleId != currentWakeCycleId) return@launch
 
             if (isMatch) {
-                activateJarvis(sessionId)
+                activateJarvis()
             } else {
                 JarvisController.updateState(JarvisState.ListeningForWakeWord)
                 updateNotificationText("Listening for Hey Jarvis…")
@@ -529,23 +558,55 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
         }
     }
 
-    private fun activateJarvis(sessionId: Long) {
-        if (sessionId != currentSessionId) return
-        JarvisLog.d("JARVIS_ACTIVATED", "sessionId=$sessionId")
-        stopAudioPipeline()
+    private fun activateJarvis() {
+        WakeWordController.pauseForVoiceSession()
         JarvisController.updateState(JarvisState.ListeningForCommand)
         updateNotificationText("JARVIS is listening for a command")
+        
+        // 1. Wake screen if device is locked / asleep
+        try {
+            val powerManager = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            @Suppress("DEPRECATION")
+            val screenWakeLock = powerManager.newWakeLock(
+                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "LifeOS:WakeWordTriggerLock"
+            )
+            screenWakeLock.acquire(4000)
+        } catch (e: Exception) {
+            Log.e("JARVIS", "WakeLock acquire error", e)
+        }
+
+        // 2. Launch / Bring MainActivity to front seamlessly when locked or closed
+        try {
+            val launchIntent = Intent(this, com.example.lifeos.MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                action = "com.example.lifeos.ACTION_JARVIS_ACTIVATE"
+            }
+            startActivity(launchIntent)
+        } catch (e: Exception) {
+            Log.e("JARVIS", "Launch activity error", e)
+        }
+
         val greeting = if (System.currentTimeMillis() % 2 == 0L) "Yes, Sir?" else "Yes, Boss?"
         serviceScope.launch(Dispatchers.Main) {
             showVoicePill()
             speak(greeting)
+            
+            // Echo Protection: Wait for greeting to finish before starting STT
+            delay(400) 
+            val startTime = System.currentTimeMillis()
+            while (JarvisController.isSpeaking.value && (System.currentTimeMillis() - startTime < 3000)) {
+                delay(100)
+            }
+            delay(300)
+
+            if (commandListener == null) {
+                commandListener = JarvisCommandListener(applicationContext)
+            }
+
             JarvisLog.d("JARVIS_STT_STARTED")
             commandListener?.start(JarvisPrefs.commandTimeoutMs(this@JarvisWakeWordService)) { transcript ->
                 serviceScope.launch {
-                    if (sessionId != currentSessionId) {
-                        JarvisLog.d("JARVIS_STT_SESSION_MISMATCH", "discarding transcript")
-                        return@launch
-                    }
                     if (!transcript.isNullOrBlank()) {
                         JarvisLog.d("JARVIS_COMMAND_RECEIVED", "text=$transcript")
                         JarvisController.updateState(JarvisState.Processing)
@@ -560,10 +621,8 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
                     
                     if (isServiceRunning && JarvisPrefs.isListenEnabled(this@JarvisWakeWordService)) {
                         JarvisLog.d("JARVIS_RETURNING_TO_WAKEWORD")
-                        wakeWordEngine?.reset()
-                        JarvisController.updateState(JarvisState.ListeningForWakeWord)
-                        val engine = wakeWordEngine ?: return@launch
-                        startWakeWordCapture(engine, sessionId)
+                        JarvisController.updateState(JarvisState.Starting)
+                        WakeWordController.resumeFromVoiceSession(this@JarvisWakeWordService)
                     }
                 }
             }
@@ -571,9 +630,22 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
     }
 
     private fun stopAudioPipeline() {
+        WakeWordController.stopListening()
+        JarvisController.setAudioPipelineStatus("stopped")
+        
+        // Stop the actual audio capture
         audioManager?.stop()
         audioManager = null
-        JarvisController.setAudioPipelineStatus("stopped")
+        
+        // Release the wake word engine
+        wakeWordEngine?.release()
+        wakeWordEngine = null
+        
+        // Cancel recording job
+        recordingJob?.cancel()
+        recordingJob = null
+        
+        Log.d("JARVIS", "Audio pipeline stopped completely")
     }
 
     private fun refreshSettings() {
@@ -593,6 +665,8 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
     }
 
     private fun stopForegroundService() {
+        if (isDestroying) return  // Guard against re-entrant calls
+        isDestroying = true
         JarvisLog.d("JARVIS_DEACTIVATED")
         isServiceRunning = false
         recordingJob?.cancel()
@@ -615,19 +689,56 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d("JARVIS", "JarvisWakeWordService onDestroy - isDestroying=$isDestroying")
+        
+        // Only clean up if not being restarted
+        if (!isDestroying) {
+            stopAudioPipeline()
+        }
+        
         tts?.stop()
         tts?.shutdown()
+        
+        // Release wake lock
+        try {
+            wakeLock?.release()
+            wakeLock = null
+            Log.d("JARVIS", "Wake lock released")
+        } catch (_: Exception) {}
+        
         stopForegroundService()
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        // If the user swipes away the app, we want the service to stay alive if listening is enabled.
-        // We can't actually prevent the app process from being killed, but the START_STICKY 
-        // returned from onStartCommand will prompt the OS to restart the service.
         Log.d("JARVIS", "JarvisWakeWordService onTaskRemoved. ListeningEnabled=${JarvisPrefs.isListenEnabled(this)}")
+        
+        // When the app is swiped away, restart the service if listening is enabled
+        if (JarvisPrefs.isListenEnabled(this)) {
+            try {
+                val restartServiceIntent = Intent(applicationContext, JarvisWakeWordService::class.java).apply {
+                    action = ACTION_START
+                }
+                val restartServicePendingIntent = PendingIntent.getService(
+                    applicationContext,
+                    1001,
+                    restartServiceIntent,
+                    PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val alarmService = getSystemService(ALARM_SERVICE) as AlarmManager
+                alarmService.setExactAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + 1000,
+                    restartServicePendingIntent
+                )
+                Log.d("JARVIS", "Scheduled service restart alarm for background operation")
+            } catch (e: Exception) {
+                Log.e("JARVIS", "Failed to schedule restart alarm", e)
+            }
+        }
     }
 
     private fun createNotificationChannel() {
@@ -662,26 +773,40 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
             Log.w("JARVIS", "Cannot show voice pill: Permission 'Display over other apps' is missing.")
             return
         }
-        if (overlayView != null) return
+        if (overlayView != null) {
+            Log.d("JARVIS", "Voice pill already visible, skipping")
+            return
+        }
 
+        Log.d("JARVIS", "Showing voice pill overlay")
+        
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
+                @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP
-            y = 100
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = 60
         }
 
         overlayView = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@JarvisWakeWordService)
-            setViewTreeViewModelStoreOwner(this@JarvisWakeWordService)
-            setViewTreeSavedStateRegistryOwner(this@JarvisWakeWordService)
+            try {
+                setViewTreeLifecycleOwner(this@JarvisWakeWordService)
+                setViewTreeViewModelStoreOwner(this@JarvisWakeWordService)
+                setViewTreeSavedStateRegistryOwner(this@JarvisWakeWordService)
+            } catch (e: Exception) {
+                Log.e("JARVIS", "Failed to set view tree owners", e)
+            }
 
             setContent {
                 var visible by remember { mutableStateOf(false) }
@@ -697,18 +822,31 @@ class JarvisWakeWordService : Service(), LifecycleOwner, ViewModelStoreOwner, Sa
             }
         }
 
-        windowManager?.addView(overlayView, params)
+        try {
+            windowManager?.addView(overlayView, params)
+            Log.d("JARVIS", "Voice pill added successfully")
+        } catch (e: Exception) {
+            Log.e("JARVIS", "Failed to add voice pill overlay", e)
+            overlayView = null
+        }
     }
 
     private fun removeVoicePill() {
         JarvisController.clearResponse()
         overlayView?.let {
-            windowManager?.removeView(it)
-            overlayView = null
+            try {
+                windowManager?.removeView(it)
+                Log.d("JARVIS", "Voice pill removed successfully")
+            } catch (e: Exception) {
+                Log.e("JARVIS", "Failed to remove voice pill overlay", e)
+            } finally {
+                overlayView = null
+            }
         }
     }
 
     private fun updateNotificationText(content: String) {
+        if (isDestroying) return
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID, buildNotification(content))
     }

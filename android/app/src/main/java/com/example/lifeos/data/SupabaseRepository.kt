@@ -1,7 +1,9 @@
 package com.example.lifeos.data
 
 import com.example.lifeos.data.models.*
+import com.example.lifeos.ui.utils.CalendarUtils
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.gotrue.auth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -317,73 +319,156 @@ class SupabaseRepository {
 
     // --- Calendar Events ---
     suspend fun getCalendarEvents(userId: String): List<CalendarEvent> = withContext(Dispatchers.IO) {
+        val app = try { com.example.lifeos.LifeOSApplication.instance } catch (_: Exception) { null }
+        Log.d("Supabase", "getCalendarEvents: Fetching for user=$userId")
         try {
-            client.postgrest.from("calendar_events").select {
+            val remote = client.postgrest.from("calendar_events").select {
                 filter { eq("user_id", userId) }
             }.decodeList<CalendarEvent>()
+            
+            Log.d("Supabase", "getCalendarEvents: Remote returned ${remote.size} events")
+            
+            if (remote.isNotEmpty() && app != null) {
+                LocalCalendarStore.saveEvents(app, remote)
+            }
+            if (remote.isNotEmpty()) {
+                remote 
+            } else {
+                val local = if (app != null) LocalCalendarStore.getEvents(app, userId) else emptyList()
+                Log.d("Supabase", "getCalendarEvents: Using local storage, found ${local.size} events")
+                local
+            }
         } catch (e: Exception) {
-            Log.w("Supabase", "Fetch calendar events from Supabase failed, using local mock data.", e)
-            val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-            listOf(
-                CalendarEvent(
-                    id = "mock-1",
-                    user_id = userId,
-                    title = "Project Sync",
-                    type = CalendarEventType.WORK,
-                    date = todayDate,
-                    start_time = "10:30",
-                    end_time = "11:30",
-                    location = "Meeting Room A"
-                ),
-                CalendarEvent(
-                    id = "mock-2",
-                    user_id = userId,
-                    title = "Gym Session",
-                    type = CalendarEventType.PERSONAL,
-                    date = todayDate,
-                    start_time = "17:30",
-                    end_time = "19:00",
-                    location = "Gold's Gym"
-                ),
-                CalendarEvent(
-                    id = "mock-3",
-                    user_id = userId,
-                    title = "Dinner with family",
-                    type = CalendarEventType.PERSONAL,
-                    date = todayDate,
-                    start_time = "20:30",
-                    end_time = "21:30",
-                    location = "Indiranagar"
-                )
-            )
+            Log.e("Supabase", "Fetch calendar events from Supabase failed", e)
+            val local = if (app != null) LocalCalendarStore.getEvents(app, userId) else emptyList()
+            Log.d("Supabase", "getCalendarEvents: Error fallback to local, found ${local.size} events")
+            local
         }
     }
 
     suspend fun createCalendarEvent(event: CalendarEvent) = withContext(Dispatchers.IO) {
+        val app = try { com.example.lifeos.LifeOSApplication.instance } catch (_: Exception) { null }
+        if (app != null) {
+            LocalCalendarStore.addOrUpdateEvent(app, event)
+        }
         try {
             client.postgrest.from("calendar_events").insert(event)
         } catch (e: Exception) {
-            Log.e("Supabase", "Create calendar event failed", e)
+            Log.e("Supabase", "Create calendar event in remote failed", e)
         }
     }
 
     suspend fun updateCalendarEvent(event: CalendarEvent) = withContext(Dispatchers.IO) {
+        val app = try { com.example.lifeos.LifeOSApplication.instance } catch (_: Exception) { null }
+        if (app != null) {
+            LocalCalendarStore.addOrUpdateEvent(app, event)
+        }
         try {
             client.postgrest.from("calendar_events").update(event) {
                 filter { eq("id", event.id) }
             }
         } catch (e: Exception) {
-            Log.e("Supabase", "Update calendar event failed", e)
+            Log.e("Supabase", "Update calendar event in remote failed", e)
         }
     }
 
-    suspend fun deleteCalendarEvent(eventId: String) = withContext(Dispatchers.IO) {
+    suspend fun deleteCalendarEvent(eventId: String, userId: String = "") = withContext(Dispatchers.IO) {
+        val app = try { com.example.lifeos.LifeOSApplication.instance } catch (_: Exception) { null }
+        if (app != null) {
+            val uid = if (userId.isNotBlank()) userId else (client.auth.currentUserOrNull()?.id ?: "")
+            LocalCalendarStore.deleteEvent(app, uid, eventId)
+        }
         try {
             client.postgrest.from("calendar_events").delete {
                 filter { eq("id", eventId) }
             }
         } catch (e: Exception) {
-            Log.e("Supabase", "Delete calendar event failed", e)
+            Log.e("Supabase", "Delete calendar event in remote failed", e)
+        }
+    }
+
+    suspend fun seedRequestedMeetings(userId: String) = withContext(Dispatchers.IO) {
+        Log.d("Supabase", "seedRequestedMeetings: Starting seeding for user=$userId")
+        val meetings = listOf(
+            // 1. Every Monday I have stand up meeting from 3:30 PM to 4:30 PM
+            CalendarEvent(
+                id = UUID.randomUUID().toString(),
+                user_id = userId,
+                title = "Stand up Meeting",
+                type = CalendarEventType.MEETING,
+                date = "2026-08-31",
+                start_time = "15:30",
+                end_time = "16:30",
+                recurrence = RecurrenceType.WEEKLY,
+                location = "Online"
+            ),
+            // 2. Every Tuesday 7:30 AM to 8:15 Am I have Experience Surface Pod weekly sync meeting -1
+            CalendarEvent(
+                id = UUID.randomUUID().toString(),
+                user_id = userId,
+                title = "Experience Surface Pod weekly sync meeting -1",
+                type = CalendarEventType.MEETING,
+                date = "2026-09-01",
+                start_time = "07:30",
+                end_time = "08:15",
+                recurrence = RecurrenceType.WEEKLY,
+                location = "Online"
+            ),
+            // 3. Every Wednesday from 11:30 AM to 12:30 PM stand up meeting
+            CalendarEvent(
+                id = UUID.randomUUID().toString(),
+                user_id = userId,
+                title = "Stand up Meeting",
+                type = CalendarEventType.MEETING,
+                date = "2026-09-02",
+                start_time = "11:30",
+                end_time = "12:30",
+                recurrence = RecurrenceType.WEEKLY,
+                location = "Online"
+            ),
+            // 3. Wednesday 7:00 PM to 7:30PM Experience Surface Pod weekly sync meeting 2
+            CalendarEvent(
+                id = UUID.randomUUID().toString(),
+                user_id = userId,
+                title = "Experience Surface Pod weekly sync meeting 2",
+                type = CalendarEventType.MEETING,
+                date = "2026-09-02",
+                start_time = "19:00",
+                end_time = "19:30",
+                recurrence = RecurrenceType.WEEKLY,
+                location = "Online"
+            ),
+            // 4. Thursday stand up from 2:30 to 3:30PM
+            CalendarEvent(
+                id = UUID.randomUUID().toString(),
+                user_id = userId,
+                title = "Stand up Meeting",
+                type = CalendarEventType.MEETING,
+                date = "2026-09-03",
+                start_time = "14:30",
+                end_time = "15:30",
+                recurrence = RecurrenceType.WEEKLY,
+                location = "Online"
+            ),
+            // 4. Friday stand up from 2:30 to 3:30PM
+            CalendarEvent(
+                id = UUID.randomUUID().toString(),
+                user_id = userId,
+                title = "Stand up Meeting",
+                type = CalendarEventType.MEETING,
+                date = "2026-09-04",
+                start_time = "14:30",
+                end_time = "15:30",
+                recurrence = RecurrenceType.WEEKLY,
+                location = "Online"
+            )
+        )
+        
+        try {
+            client.postgrest.from("calendar_events").insert(meetings)
+            Log.d("Supabase", "Successfully seeded requested recurring meetings.")
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to seed requested meetings", e)
         }
     }
 
@@ -395,15 +480,15 @@ class SupabaseRepository {
             val totalBalance = accounts.sumOf { it.current_balance.toDouble() }
             val fitness = getFitnessActivities(userId).take(3)
             
-            val todayDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-            val calendar = Calendar.getInstance()
-            calendar.add(Calendar.DAY_OF_YEAR, 7)
-            val nextWeekDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(calendar.time)
-            
             val allEvents = getCalendarEvents(userId)
-            val todayEvents = allEvents.filter { it.date == todayDate }
-            val upcomingEvents = allEvents.filter { it.date > todayDate && it.date <= nextWeekDate }
-                .sortedBy { it.date }
+            val todayEvents = CalendarUtils.expandEventsForDate(allEvents, Calendar.getInstance())
+            
+            val next7DaysEvents = mutableListOf<CalendarEvent>()
+            val tempCal = Calendar.getInstance()
+            repeat(7) {
+                tempCal.add(Calendar.DAY_OF_YEAR, 1)
+                next7DaysEvents.addAll(CalendarUtils.expandEventsForDate(allEvents, tempCal))
+            }
             
             buildString {
                 append("Sir, here is your current status:\n")
@@ -416,9 +501,9 @@ class SupabaseRepository {
                     }
                 }
 
-                if (upcomingEvents.isNotEmpty()) {
+                if (next7DaysEvents.isNotEmpty()) {
                     append("- Upcoming Events (Next 7 Days):\n")
-                    upcomingEvents.forEach { event ->
+                    next7DaysEvents.forEach { event ->
                         append("  * ${event.date}: ${event.title}\n")
                     }
                 }
@@ -435,6 +520,125 @@ class SupabaseRepository {
             }
         } catch (e: Exception) {
             "Sir, I'm having trouble fetching the full system snapshot."
+        }
+    }
+
+    // ==========================================
+    // HEALTH & FITNESS FOUNDATION API
+    // ==========================================
+
+    // --- Daily Activity ---
+    suspend fun getDailyActivity(userId: String, date: String): DailyActivity? = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("daily_activity").select {
+                filter {
+                    eq("user_id", userId)
+                    eq("date", date)
+                }
+            }.decodeSingleOrNull<DailyActivity>()
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to fetch daily activity for $date", e)
+            null
+        }
+    }
+
+    suspend fun getActivityHistory(userId: String, limit: Int = 30): List<DailyActivity> = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("daily_activity").select {
+                filter { eq("user_id", userId) }
+            }.decodeList<DailyActivity>().sortedByDescending { it.date }.take(limit)
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to fetch activity history", e)
+            emptyList()
+        }
+    }
+
+    suspend fun upsertDailyActivity(activity: DailyActivity) = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("daily_activity").upsert(activity)
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to upsert daily activity", e)
+        }
+    }
+
+    // --- Workouts ---
+    suspend fun getRecentWorkouts(userId: String, limit: Int = 10): List<WorkoutRecord> = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("workouts").select {
+                filter { eq("user_id", userId) }
+            }.decodeList<WorkoutRecord>().sortedByDescending { it.start_time }.take(limit)
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to fetch recent workouts", e)
+            emptyList()
+        }
+    }
+
+    suspend fun upsertWorkout(workout: WorkoutRecord) = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("workouts").upsert(workout)
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to upsert workout", e)
+        }
+    }
+
+    // --- Health Vitals ---
+    suspend fun getLatestVitals(userId: String): List<HealthVitalRecord> = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("health_vitals").select {
+                filter { eq("user_id", userId) }
+            }.decodeList<HealthVitalRecord>().sortedByDescending { it.recorded_at }
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to fetch vitals", e)
+            emptyList()
+        }
+    }
+
+    suspend fun insertHealthVital(vital: HealthVitalRecord) = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("health_vitals").insert(vital)
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to insert health vital", e)
+        }
+    }
+
+    // --- Sleep Sessions ---
+    suspend fun getSleepSessionForDate(userId: String, date: String): SleepSessionRecord? = withContext(Dispatchers.IO) {
+        try {
+            val sessions = client.postgrest.from("sleep_sessions").select {
+                filter { eq("user_id", userId) }
+            }.decodeList<SleepSessionRecord>()
+            sessions.firstOrNull { it.start_time.startsWith(date) || it.end_time.startsWith(date) }
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to fetch sleep session for $date", e)
+            null
+        }
+    }
+
+    suspend fun upsertSleepSession(session: SleepSessionRecord) = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("sleep_sessions").upsert(session)
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to upsert sleep session", e)
+        }
+    }
+
+    // --- Body Metrics ---
+    suspend fun getBodyMetrics(userId: String): List<BodyMetricRecord> = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("body_metrics").select {
+                filter { eq("user_id", userId) }
+            }.decodeList<BodyMetricRecord>().sortedByDescending { it.recorded_at }
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to fetch body metrics", e)
+            emptyList()
+        }
+    }
+
+    suspend fun insertBodyMetric(metric: BodyMetricRecord) = withContext(Dispatchers.IO) {
+        try {
+            client.postgrest.from("body_metrics").insert(metric)
+        } catch (e: Exception) {
+            Log.e("Supabase", "Failed to insert body metric", e)
         }
     }
 }

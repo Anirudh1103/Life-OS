@@ -13,6 +13,7 @@ import com.example.lifeos.data.models.FinanceAccount
 import com.example.lifeos.data.models.FinanceTransaction
 import com.example.lifeos.data.models.ActivityType
 import com.example.lifeos.data.models.CalendarEvent
+import com.example.lifeos.ui.utils.CalendarUtils
 import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.gotrue.SessionStatus
 import io.github.jan.supabase.postgrest.postgrest
@@ -22,6 +23,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -51,6 +54,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _calendarEvents = MutableStateFlow<List<CalendarEvent>>(emptyList())
     val calendarEvents: StateFlow<List<CalendarEvent>> = _calendarEvents.asStateFlow()
+
+    private val _jarvisInsight = MutableStateFlow("Initializing neural link...")
+    val jarvisInsight: StateFlow<String> = _jarvisInsight.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -119,19 +125,30 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 // Check and seed mock data if empty
                 seedMockDataIfEmpty(user.id)
 
-                val t = repository.getTasks(user.id)
-                val f = repository.getFitnessActivities(user.id)
-                val lc = repository.getCategories(user.id)
-                val lt = repository.getTopics(user.id)
-                val fa = repository.getFinanceAccounts(user.id)
-                val ft = repository.getTransactions(user.id)
-                val ce = repository.getCalendarEvents(user.id)
+                // Parallelize all network requests to load dashboard in sub-second time
+                val tDeferred = async(Dispatchers.IO) { repository.getTasks(user.id) }
+                val fDeferred = async(Dispatchers.IO) { repository.getFitnessActivities(user.id) }
+                val lcDeferred = async(Dispatchers.IO) { repository.getCategories(user.id) }
+                val ltDeferred = async(Dispatchers.IO) { repository.getTopics(user.id) }
+                val faDeferred = async(Dispatchers.IO) { repository.getFinanceAccounts(user.id) }
+                val ftDeferred = async(Dispatchers.IO) { repository.getTransactions(user.id) }
+                val ceDeferred = async(Dispatchers.IO) { repository.getCalendarEvents(user.id) }
+
+                val t = tDeferred.await()
+                val f = fDeferred.await()
+                val lc = lcDeferred.await()
+                val lt = ltDeferred.await()
+                val fa = faDeferred.await()
+                val ft = ftDeferred.await()
+                val ce = ceDeferred.await()
 
                 if (ce.isEmpty()) {
                     android.util.Log.d("Dashboard", "No calendar events found, using offline fallback.")
                 }
 
-                android.util.Log.d("Dashboard", "Retrieved ${t.size} tasks, ${f.size} activities, ${lc.size} categories, ${lt.size} topics, ${fa.size} accounts, ${ft.size} transactions, ${ce.size} events.")
+                android.util.Log.d("Dashboard", "Retrieved in parallel: ${t.size} tasks, ${f.size} activities, ${lc.size} categories, ${lt.size} topics, ${fa.size} accounts, ${ft.size} transactions, ${ce.size} events.")
+
+                val todayEvents = CalendarUtils.expandEventsForDate(ce, Calendar.getInstance())
 
                 _tasks.value = t
                 _fitnessActivities.value = f
@@ -139,7 +156,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 _learningTopics.value = lt
                 _financeAccounts.value = fa
                 _financeTransactions.value = ft
-                _calendarEvents.value = ce
+                _calendarEvents.value = todayEvents
+
+                // Generate dynamic insight
+                _jarvisInsight.value = repository.getIntelligenceSnapshot(user.id)
 
             } catch (e: Exception) {
                 android.util.Log.e("Dashboard", "Data sync failure: ${e.message}", e)

@@ -11,11 +11,18 @@ object JarvisNavigationManager {
     private val _backEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val backEvents = _backEvents.asSharedFlow()
 
+    private val _openChatEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val openChatEvents = _openChatEvents.asSharedFlow()
+
     fun navigateTo(key: NavKey) {
         _navEvents.tryEmit(key)
     }
 
     fun goBack() {
         _backEvents.tryEmit(Unit)
+    }
+
+    fun openJarvisChat() {
+        _openChatEvents.tryEmit(Unit)
     }
 }
